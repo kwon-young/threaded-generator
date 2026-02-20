@@ -8,31 +8,21 @@ T = TypeVar("T")
 
 class ThreadedGenerator(Generic[T]):
     """
-    Wraps an iterable in a separate thread and uses a queue to buffer items.
+    Buffer items from an iterable in a separate thread (Python > 3.13).
 
-    Requires Python > 3.13.
+    The worker thread starts on iteration and cleans up automatically (joining
+    the thread and shutting down the queue) when iteration stops or errors.
 
     Example:
-        >>> def slow_gen():
-        ...     import time
+        >>> def slow():
         ...     for i in range(3):
-        ...         time.sleep(0.1)
         ...         yield i
-        >>> for i in ThreadedGenerator(slow_gen(), maxsize=2):
-        ...     print(i)
-        0
-        1
-        2
-
-    The worker thread is dispatched when iteration starts.
-
-    Resource cleanup is handled automatically when iteration stops (either
-    by exhaustion, error, or explicit break). The queue then is shut down and
-    the worker thread is joined.
+        >>> list(ThreadedGenerator(slow(), maxsize=2))
+        [0, 1, 2]
 
     Args:
         it (Iterable[T]): The iterable to wrap.
-        maxsize (int): The maximum number of items to buffer in the queue.
+        maxsize (int): Max items to buffer.
     """
 
     def __init__(self, it: Iterable[T], maxsize: int = 1):
