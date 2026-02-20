@@ -10,10 +10,6 @@ class ThreadedGenerator(Generic[T]):
     """
     Wraps an iterable in a separate thread and uses a queue to buffer items.
 
-    This allows the generation of items to proceed concurrently with their
-    consumption, which can improve performance if the generator performs
-    I/O or CPU-bound work.
-
     Args:
         it: The iterable to wrap.
         maxsize: The maximum number of items to buffer in the queue.
