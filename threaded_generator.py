@@ -24,10 +24,10 @@ class ThreadedGenerator(Generic[T]):
         1
         2
 
-    The worker thread is dispatched immediately when iteration starts.
+    The worker thread is dispatched when iteration starts.
 
-    Resource cleanup is handled automatically. When iteration stops (either
-    by exhaustion, error, or explicit break), the queue is shut down and
+    Resource cleanup is handled automatically when iteration stops (either
+    by exhaustion, error, or explicit break). The queue then is shut down and
     the worker thread is joined.
 
     Args:
