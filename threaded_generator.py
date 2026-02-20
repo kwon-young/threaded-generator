@@ -12,6 +12,18 @@ class ThreadedGenerator(Generic[T]):
 
     Requires Python > 3.13.
 
+    Example:
+        >>> def slow_gen():
+        ...     import time
+        ...     for i in range(3):
+        ...         time.sleep(0.1)
+        ...         yield i
+        >>> for i in ThreadedGenerator(slow_gen(), maxsize=2):
+        ...     print(i)
+        0
+        1
+        2
+
     Args:
         it (Iterable[T]): The iterable to wrap.
         maxsize (int): The maximum number of items to buffer in the queue.
