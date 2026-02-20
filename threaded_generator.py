@@ -10,9 +10,11 @@ class ThreadedGenerator(Generic[T]):
     """
     Wraps an iterable in a separate thread and uses a queue to buffer items.
 
+    Requires Python > 3.13.
+
     Args:
-        it: The iterable to wrap.
-        maxsize: The maximum number of items to buffer in the queue.
+        it (Iterable[T]): The iterable to wrap.
+        maxsize (int): The maximum number of items to buffer in the queue.
     """
 
     def __init__(self, it: Iterable[T], maxsize: int = 1):
