@@ -24,6 +24,12 @@ class ThreadedGenerator(Generic[T]):
         1
         2
 
+    The worker thread is dispatched immediately when iteration starts.
+
+    Resource cleanup is handled automatically. When iteration stops (either
+    by exhaustion, error, or explicit break), the queue is shut down and
+    the worker thread is joined.
+
     Args:
         it (Iterable[T]): The iterable to wrap.
         maxsize (int): The maximum number of items to buffer in the queue.
