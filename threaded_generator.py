@@ -7,6 +7,18 @@ T = TypeVar("T")
 
 
 class ThreadedGenerator(Generic[T]):
+    """
+    Wraps an iterable in a separate thread and uses a queue to buffer items.
+
+    This allows the generation of items to proceed concurrently with their
+    consumption, which can improve performance if the generator performs
+    I/O or CPU-bound work.
+
+    Args:
+        it: The iterable to wrap.
+        maxsize: The maximum number of items to buffer in the queue.
+    """
+
     def __init__(self, it: Iterable[T], maxsize: int = 1):
         self.it = it
         self.queue: Queue[T] = Queue(maxsize=maxsize)
