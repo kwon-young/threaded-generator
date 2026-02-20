@@ -14,10 +14,7 @@ class ThreadedGenerator(Generic[T]):
     the thread and shutting down the queue) when iteration stops or errors.
 
     Example:
-        >>> def slow():
-        ...     for i in range(3):
-        ...         yield i
-        >>> list(ThreadedGenerator(slow(), maxsize=2))
+        >>> list(ThreadedGenerator(range(3), maxsize=2))
         [0, 1, 2]
 
     Args:
