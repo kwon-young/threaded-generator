@@ -77,3 +77,29 @@ class TestThreadedGenerator(unittest.TestCase):
         
         self.assertIsInstance(cm.exception.__cause__, ValueError)
         self.assertEqual(str(cm.exception.__cause__), "Test Error")
+
+    def test_pipeline_exception_propagation(self):
+        """Test that exceptions propagate through a chain of ThreadedGenerators."""
+        def error_gen():
+            yield 1
+            raise ValueError("Root Error")
+
+        # Create a pipeline: error_gen -> gen1 -> gen2
+        gen1 = ThreadedGenerator(error_gen())
+        gen2 = ThreadedGenerator(gen1)
+
+        # Iterating gen2 should eventually raise the error from error_gen
+        with self.assertRaises(RuntimeError) as cm:
+            list(gen2)
+        
+        # The exception might be double-wrapped depending on implementation details,
+        # but we definitely expect the root cause to be there.
+        # gen1 wraps ValueError in RuntimeError.
+        # gen2 wraps gen1's RuntimeError in another RuntimeError.
+        
+        first_cause = cm.exception.__cause__
+        self.assertIsInstance(first_cause, RuntimeError)
+        
+        root_cause = first_cause.__cause__
+        self.assertIsInstance(root_cause, ValueError)
+        self.assertEqual(str(root_cause), "Root Error")
