@@ -103,3 +103,23 @@ class TestThreadedGenerator(unittest.TestCase):
         root_cause = first_cause.__cause__
         self.assertIsInstance(root_cause, ValueError)
         self.assertEqual(str(root_cause), "Root Error")
+
+    def test_shared_consumption(self):
+        """Test multiple consumers sharing the same generator via enqueue/join."""
+        source = range(10)
+        gen = ThreadedGenerator(source)
+        
+        # Create two consumers sharing the same underlying queue
+        it1 = gen.enqueue()
+        it2 = gen.enqueue()
+        
+        # Consume both together. Since they share the queue, they will split the items.
+        # zip(it1, it2) will pull one from it1, one from it2, etc.
+        # So we expect (0, 1), (2, 3), (4, 5), (6, 7), (8, 9)
+        results = list(zip(it1, it2))
+        
+        # Must call join manually when using enqueue
+        gen.join()
+        
+        expected = [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9)]
+        self.assertEqual(results, expected)
