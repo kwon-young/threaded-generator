@@ -143,3 +143,27 @@ class TestThreadedGenerator(unittest.TestCase):
 
         # The thread should be gone
         self.assertIsNone(gen.thread)
+
+    def test_early_break(self):
+        """Test that breaking out of __iter__ loop cleans up thread and lock."""
+        import time
+
+        def infinite_gen():
+            i = 0
+            while True:
+                yield i
+                i += 1
+                time.sleep(0.01)
+
+        gen = ThreadedGenerator(infinite_gen(), maxsize=5)
+
+        # Iterate and break early
+        for i, item in enumerate(gen):
+            if i >= 2:
+                break
+
+        # The generator's __iter__ finally block calls terminate()
+        # which should release the lock and clear the thread.
+        self.assertFalse(gen.lock.locked())
+        self.assertIsNone(gen.thread)
+        self.assertTrue(gen.queue.is_shutdown)
