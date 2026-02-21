@@ -13,6 +13,10 @@ class ThreadedGenerator(Generic[T]):
     The worker thread starts on iteration and cleans up automatically (joining
     the thread and shutting down the queue) when iteration stops or errors.
 
+    Note:
+        This class is NOT thread-safe. Like standard Python generators,
+        the same instance should not be iterated by multiple threads simultaneously.
+
     Example:
         >>> list(ThreadedGenerator(range(3), maxsize=2))
         [0, 1, 2]
@@ -42,6 +46,13 @@ class ThreadedGenerator(Generic[T]):
             self.queue.shutdown()
 
     def __iter__(self) -> Generator[T]:
+        """
+        Iterate over the buffered items.
+
+        Note:
+            This method is not thread-safe. Do not call this on the same instance
+            from multiple threads.
+        """
         self.queue.is_shutdown = False
         self.exception = None
         thread = Thread(target=self.run, name=repr(self.it))
