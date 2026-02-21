@@ -14,8 +14,8 @@ class ThreadedGenerator(Generic[T]):
     the thread and shutting down the queue) when iteration stops or errors.
 
     Note:
-        This class is NOT thread-safe. Like standard Python generators,
-        the same instance should not be iterated by multiple threads simultaneously.
+        This class uses an internal lock to ensure thread safety during
+        iteration startup and thread creation.
 
     Example:
         >>> list(ThreadedGenerator(range(3), maxsize=2))
@@ -63,9 +63,7 @@ class ThreadedGenerator(Generic[T]):
         """
         Iterate over the buffered items.
 
-        Note:
-            This method is not thread-safe. Do not call this on the same instance
-            from multiple threads.
+        The iteration startup is protected by a lock to ensure thread safety.
         """
         with self.lock:
             self.start()
