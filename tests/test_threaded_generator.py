@@ -48,3 +48,16 @@ class TestThreadedGenerator(unittest.TestCase):
         gen = ThreadedGenerator(source, maxsize=1)
         result = list(gen)
         self.assertEqual(result, list(source))
+
+    def test_restart(self):
+        """Test that the generator can be iterated over multiple times."""
+        source = range(10)
+        gen = ThreadedGenerator(source)
+        
+        # First pass
+        result1 = list(gen)
+        self.assertEqual(result1, list(source))
+        
+        # Second pass (restart)
+        result2 = list(gen)
+        self.assertEqual(result2, list(source))
