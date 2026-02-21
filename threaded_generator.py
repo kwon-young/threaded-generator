@@ -10,12 +10,19 @@ class ThreadedGenerator(Generic[T]):
     """
     Buffer items from an iterable in a separate thread (Python > 3.13).
 
-    This class supports two modes of consumption:
-    1. Direct iteration (`__iter__`): manages the full lifecycle (start/join).
-    2. Concurrent queue access (`enqueue`): allows consuming the queue directly.
+    This class supports two usage patterns:
+    1. Direct iteration (`__iter__`):
+       The simplest way to use the generator. It handles starting the thread
+       and joining it when iteration completes. Only one consumer can iterate
+       at a time.
 
-    These modes are mutually exclusive via a lock, as the underlying iterable
-    is assumed to be not thread-safe.
+    2. Shared consumption (`enqueue` + `join`):
+       Multiple consumers can call `enqueue()` to pull items from the same
+       underlying iterable concurrently. The main thread must eventually call
+       `join()` to ensure resources are cleaned up.
+
+    The underlying iterable is assumed to be not thread-safe, so only one
+    worker thread buffers items into the queue.
 
     Example:
         >>> list(ThreadedGenerator(range(3), maxsize=2))
@@ -60,13 +67,11 @@ class ThreadedGenerator(Generic[T]):
 
     def enqueue(self) -> Generator[T]:
         """
-        Start the generator if needed and return a generator over the queue.
+        Return a generator that yields items from the shared queue.
 
-        This enables concurrent access to the iterator items via the queue.
-        Acquires the lock non-blocking; if the generator is already running
-        via `__iter__` (locked), this may not start a new thread or might
-        piggyback if the lock logic allows (implementation dependent), but
-        intended usage implies exclusivity.
+        This method allows multiple consumers to process items from the same
+        source iterable in parallel. The generator thread starts automatically
+        if it isn't running.
 
         Returns:
             Generator[T]: A generator yielding items from the queue.
