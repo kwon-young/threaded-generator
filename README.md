@@ -66,20 +66,6 @@ print(next(it1)) # 2
 gen.join()
 ```
 
-## API
-
-### `ThreadedGenerator(it, maxsize=1)`
-
-*   `it`: The iterable to wrap.
-*   `maxsize`: Maximum items to buffer in the queue.
-
-### Methods
-
-*   `__iter__()`: Iterates over the buffered items. Blocks if another consumer is currently using the generator.
-*   `enqueue()`: Returns a generator yielding from the shared queue without blocking the main lock. Useful for multiple consumers.
-*   `join()`: Joins the background thread and queue. Re-raises any exceptions encountered in the producer thread.
-*   `terminate(immediate=True)`: Signals the queue to shut down and joins the thread.
-
 ## Error Handling
 
 Exceptions raised within the source iterable are caught in the background thread and re-raised in the main thread (wrapped in a `RuntimeError`) when `join()` is called or iteration completes.
