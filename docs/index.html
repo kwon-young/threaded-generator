@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Threaded Generator &#8212; Threaded Generator  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Threaded Generator" href="threaded_generator.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="threaded-generator">
+<h1>Threaded Generator<a class="headerlink" href="#threaded-generator" title="Link to this heading">¶</a></h1>
+<p>Easily run iterators in background threads or processes to create parallel producer-consumer pipelines.</p>
+<p>This library provides utilities to wrap an iterable (like a generator, a slow I/O process, or a CPU-bound task) in a background thread or process. It buffers items in a queue so that the consumer and producer can work concurrently, smoothing out bursts and improving throughput.</p>
+<p>Key Features:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">ThreadedGenerator</span></code></strong>: Run an iterator in a background thread (good for I/O bound tasks).</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">ProcessGenerator</span></code></strong>: Run an iterator in a background process (good for CPU bound tasks, avoids GIL).</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">ParallelGenerator</span></code></strong>: Split the work of an iterator across multiple parallel workers.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">Monitor</span></code></strong>: Real-time terminal visualization of queue sizes and throughput.</p></li>
+</ul>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>threaded-generator
+</pre></div>
+</div>
+</section>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h2>
+<section id="basic-threaded-generation-i-o-bound">
+<h3>1. Basic Threaded Generation (I/O Bound)<a class="headerlink" href="#basic-threaded-generation-i-o-bound" title="Link to this heading">¶</a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">ThreadedGenerator</span></code> when your source is slow due to I/O (network, disk).</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">threaded_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadedGenerator</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">slow_io_task</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>  <span class="c1"># Simulate network/disk wait</span>
+        <span class="k">yield</span> <span class="n">i</span>
+
+<span class="c1"># Buffers up to 3 items in a background thread</span>
+<span class="n">gen</span> <span class="o">=</span> <span class="n">ThreadedGenerator</span><span class="p">(</span><span class="n">slow_io_task</span><span class="p">(),</span> <span class="n">maxsize</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Got </span><span class="si">{</span><span class="n">item</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="process-generation-cpu-bound">
+<h3>2. Process Generation (CPU Bound)<a class="headerlink" href="#process-generation-cpu-bound" title="Link to this heading">¶</a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">ProcessGenerator</span></code> to bypass the GIL for CPU-intensive tasks.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">threaded_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcessGenerator</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">heavy_computation</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+        <span class="c1"># Simulate heavy CPU work</span>
+        <span class="k">yield</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1_000_000</span> <span class="o">*</span> <span class="n">i</span><span class="p">))</span>
+
+<span class="n">gen</span> <span class="o">=</span> <span class="n">ProcessGenerator</span><span class="p">(</span><span class="n">heavy_computation</span><span class="p">(),</span> <span class="n">maxsize</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="parallel-processing-multiple-workers">
+<h3>3. Parallel Processing (Multiple Workers)<a class="headerlink" href="#parallel-processing-multiple-workers" title="Link to this heading">¶</a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">ParallelGenerator</span></code> with <code class="docutils literal notranslate"><span class="pre">num_workers</span> <span class="pre">&gt;</span> <span class="pre">1</span></code> to distribute work.</p>
+<p><strong>Important:</strong> You must decorate the generator function with <code class="docutils literal notranslate"><span class="pre">&#64;partial_generator</span></code>. This allows each worker to create its own fresh instance of the iterator.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">threaded_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">ParallelGenerator</span><span class="p">,</span> <span class="n">partial_generator</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="nd">@partial_generator</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">process_data</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="c1"># Simulate work</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+    <span class="k">yield</span> <span class="n">x</span> <span class="o">*</span> <span class="n">x</span>
+
+<span class="c1"># Spawns 4 worker processes to process items in parallel</span>
+<span class="n">gen</span> <span class="o">=</span> <span class="n">ParallelGenerator</span><span class="p">(</span><span class="n">process_data</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">maxsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">res</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="monitoring">
+<h3>4. Monitoring<a class="headerlink" href="#monitoring" title="Link to this heading">¶</a></h3>
+<p>Visualize the performance of your pipeline in the terminal.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">threaded_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadedGenerator</span><span class="p">,</span> <span class="n">Monitor</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="n">monitor</span> <span class="o">=</span> <span class="n">Monitor</span><span class="p">()</span>
+
+<span class="c1"># Pass the monitor to the generator</span>
+<span class="n">gen</span> <span class="o">=</span> <span class="n">ThreadedGenerator</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">100</span><span class="p">),</span> <span class="n">monitor</span><span class="o">=</span><span class="n">monitor</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;MyGen&quot;</span><span class="p">)</span>
+
+<span class="k">with</span> <span class="n">monitor</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">:</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span> <span class="c1"># Simulate slow consumption</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="advanced-usage">
+<h2>Advanced Usage<a class="headerlink" href="#advanced-usage" title="Link to this heading">¶</a></h2>
+<section id="shared-consumption">
+<h3>Shared Consumption<a class="headerlink" href="#shared-consumption" title="Link to this heading">¶</a></h3>
+<p>You can share a single underlying producer among multiple consumers using the context manager.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">gen</span> <span class="o">=</span> <span class="n">ThreadedGenerator</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span> <span class="n">maxsize</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+
+<span class="k">with</span> <span class="n">gen</span><span class="p">:</span>
+    <span class="n">it1</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+    <span class="n">it2</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+
+    <span class="c1"># Items are distributed between it1 and it2</span>
+    <span class="nb">print</span><span class="p">(</span><span class="nb">next</span><span class="p">(</span><span class="n">it1</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="nb">next</span><span class="p">(</span><span class="n">it2</span><span class="p">))</span>
+</pre></div>
+</div>
+</section>
+<section id="error-handling">
+<h3>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading">¶</a></h3>
+<p>Exceptions raised within the source iterable are caught in the background worker and re-raised in the main thread (wrapped in a <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code>) when <code class="docutils literal notranslate"><span class="pre">join()</span></code> is called or iteration completes.</p>
+</section>
+</section>
+</section>
+<section id="documentation">
+<h1>Documentation<a class="headerlink" href="#documentation" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="threaded_generator.html">Threaded Generator</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="threaded_generator.html#examples">Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="threaded_generator.html#generators">Generators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="threaded_generator.html#utilities">Utilities</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="shutdown_queue.html">Shutdown Queue</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="shutdown_queue.html#examples">Examples</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="monitor.html">Monitor</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="monitor.html#examples">Examples</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+<section id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
+<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
+<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
+</ul>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">Threaded Generator</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="threaded_generator.html">Threaded Generator</a></li>
+<li class="toctree-l1"><a class="reference internal" href="shutdown_queue.html">Shutdown Queue</a></li>
+<li class="toctree-l1"><a class="reference internal" href="monitor.html">Monitor</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+      <li>Next: <a href="threaded_generator.html" title="next chapter">Threaded Generator</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Kwon-Young Choi.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

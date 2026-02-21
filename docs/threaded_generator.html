@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Threaded Generator &#8212; Threaded Generator  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Shutdown Queue" href="shutdown_queue.html" />
+    <link rel="prev" title="Threaded Generator" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="threaded-generator">
+<h1>Threaded Generator<a class="headerlink" href="#threaded-generator" title="Link to this heading">¶</a></h1>
+<nav class="contents local" id="contents">
+<ul class="simple">
+<li><p><a class="reference internal" href="#examples" id="id2">Examples</a></p></li>
+<li><p><a class="reference internal" href="#generators" id="id3">Generators</a></p></li>
+<li><p><a class="reference internal" href="#utilities" id="id4">Utilities</a></p></li>
+</ul>
+</nav>
+<p id="module-threaded_generator.threaded_generator">This module provides generator wrappers that execute source iterators in separate threads
+or processes, allowing for parallel producer-consumer pipelines.</p>
+<p>Key components:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#threaded_generator.threaded_generator.ThreadedGenerator" title="threaded_generator.threaded_generator.ThreadedGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ThreadedGenerator</span></code></a>: Runs the source iterator in a separate thread.</p></li>
+<li><p><a class="reference internal" href="#threaded_generator.threaded_generator.ProcessGenerator" title="threaded_generator.threaded_generator.ProcessGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ProcessGenerator</span></code></a>: Runs the source iterator in a separate process.</p></li>
+<li><p><a class="reference internal" href="#threaded_generator.threaded_generator.ParallelGenerator" title="threaded_generator.threaded_generator.ParallelGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ParallelGenerator</span></code></a>: Base class supporting multiple workers (threads or processes).</p></li>
+</ul>
+<section id="examples">
+<h2><a class="toc-backref" href="#id2" role="doc-backlink">Examples</a><a class="headerlink" href="#examples" title="Link to this heading">¶</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span><span class="w"> </span><span class="nf">slow_source</span><span class="p">():</span>
+<span class="gp">... </span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+<span class="gp">... </span>        <span class="k">yield</span> <span class="n">i</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Wrap the slow source in a threaded generator</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen</span> <span class="o">=</span> <span class="n">ThreadedGenerator</span><span class="p">(</span><span class="n">slow_source</span><span class="p">(),</span> <span class="n">maxsize</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>  <span class="c1"># Consumption happens in main thread, production in background</span>
+<span class="go">0</span>
+<span class="go">1</span>
+<span class="go">2</span>
+<span class="go">3</span>
+<span class="go">4</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Using ProcessGenerator for CPU-bound tasks</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span><span class="w"> </span><span class="nf">cpu_bound_source</span><span class="p">():</span>
+<span class="gp">... </span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">yield</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1000000</span> <span class="o">*</span> <span class="n">i</span><span class="p">))</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen</span> <span class="o">=</span> <span class="n">ProcessGenerator</span><span class="p">(</span><span class="n">cpu_bound_source</span><span class="p">(),</span> <span class="n">maxsize</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">list</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+<span class="go">[0, 0, 1999999000000, ...]</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Using ParallelGenerator with multiple workers</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Note: You must wrap the generator function with @partial_generator.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># This is required because standard generators cannot be pickled or restarted.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># The wrapper delays execution so each worker process can create its own</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># fresh iterator instance.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nd">@partial_generator</span>
+<span class="gp">... </span><span class="k">def</span><span class="w"> </span><span class="nf">parallel_source</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">yield</span> <span class="n">x</span> <span class="o">*</span> <span class="n">x</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># This will spawn 4 worker processes</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen</span> <span class="o">=</span> <span class="n">ParallelGenerator</span><span class="p">(</span><span class="n">parallel_source</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">list</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+<span class="go">[4, 4, 4, 4]</span>
+</pre></div>
+</div>
+</section>
+<section id="generators">
+<h2><a class="toc-backref" href="#id3" role="doc-backlink">Generators</a><a class="headerlink" href="#generators" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="threaded_generator.threaded_generator.ThreadedGenerator">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">ThreadedGenerator</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">it</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">maxsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">disable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">queue_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">monitor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/threaded_generator.html#ThreadedGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.threaded_generator.ThreadedGenerator" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#threaded_generator.threaded_generator.ParallelGenerator" title="threaded_generator.threaded_generator.ParallelGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ParallelGenerator</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></p>
+<p>A generator that runs the source iterator in a separate thread.</p>
+<p>Communication is done using a <code class="xref py py-class docutils literal notranslate"><span class="pre">queue.Queue</span></code> by default.
+If this is chained with a process based Generator, you need to use
+a <code class="xref py py-class docutils literal notranslate"><span class="pre">multiprocessing.Queue</span></code> for the queue_type.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>it</strong> (<em>Iterable</em><em>[</em><em>T</em><em>]</em>) – The source iterable.</p></li>
+<li><p><strong>maxsize</strong> (<em>int</em>) – Max queue size.</p></li>
+<li><p><strong>disable</strong> (<em>bool</em>) – If True, run in main thread.</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Name for monitoring.</p></li>
+<li><p><strong>queue_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="shutdown_queue.html#threaded_generator.shutdown_queue.Q" title="threaded_generator.shutdown_queue.Q"><em>Q</em></a><em>[</em><em>T</em><em>]</em><em>] </em><em>| </em><em>None</em>) – Custom queue type.</p></li>
+<li><p><strong>monitor</strong> (<a class="reference internal" href="monitor.html#threaded_generator.monitor.Monitor" title="threaded_generator.monitor.Monitor"><em>Monitor</em></a><em> | </em><em>None</em>) – Monitor instance.</p></li>
+</ul>
+</dd>
+</dl>
+<section id="example">
+<h3>Example<a class="headerlink" href="#example" title="Link to this heading">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen</span> <span class="o">=</span> <span class="n">ThreadedGenerator</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span> <span class="n">maxsize</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">list</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+<span class="go">[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]</span>
+</pre></div>
+</div>
+</section>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="threaded_generator.threaded_generator.ProcessGenerator">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">ProcessGenerator</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">it</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">maxsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">disable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">queue_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">monitor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/threaded_generator.html#ProcessGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.threaded_generator.ProcessGenerator" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#threaded_generator.threaded_generator.ParallelGenerator" title="threaded_generator.threaded_generator.ParallelGenerator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ParallelGenerator</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></p>
+<p>A generator that runs the source iterator in a separate process.</p>
+<p>Communication is done using a <code class="xref py py-class docutils literal notranslate"><span class="pre">multiprocessing.Queue</span></code> by default.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>it</strong> (<em>Iterable</em><em>[</em><em>T</em><em>]</em>) – The source iterable.</p></li>
+<li><p><strong>maxsize</strong> (<em>int</em>) – Max queue size.</p></li>
+<li><p><strong>disable</strong> (<em>bool</em>) – If True, run in main process.</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Name for monitoring.</p></li>
+<li><p><strong>queue_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="shutdown_queue.html#threaded_generator.shutdown_queue.Q" title="threaded_generator.shutdown_queue.Q"><em>Q</em></a><em>[</em><em>T</em><em>]</em><em>] </em><em>| </em><em>None</em>) – Custom queue type.</p></li>
+<li><p><strong>monitor</strong> (<a class="reference internal" href="monitor.html#threaded_generator.monitor.Monitor" title="threaded_generator.monitor.Monitor"><em>Monitor</em></a><em> | </em><em>None</em>) – Monitor instance.</p></li>
+</ul>
+</dd>
+</dl>
+<section id="id1">
+<h3>Example<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen</span> <span class="o">=</span> <span class="n">ProcessGenerator</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span> <span class="n">maxsize</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">list</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+<span class="go">[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]</span>
+</pre></div>
+</div>
+</section>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="threaded_generator.threaded_generator.ParallelGenerator">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">ParallelGenerator</span></span><span class="sig-paren">(</span>
+
+<dl>
+<dd><em class="sig-param"><span class="n"><span class="pre">it</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">num_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">maxsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">disable</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'process'</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">queue_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+<dd><em class="sig-param"><span class="n"><span class="pre">monitor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>,</dd>
+</dl>
+
+<span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/threaded_generator.html#ParallelGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.threaded_generator.ParallelGenerator" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></p>
+<p>A generator wrapper that executes the source iterator in separate workers (threads or processes).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>it</strong> (<em>Iterable</em><em>[</em><em>T</em><em>]</em>) – The source iterable to consume.</p></li>
+<li><p><strong>num_workers</strong> (<em>int</em>) – Number of worker processes/threads to spawn. Defaults to 1.</p></li>
+<li><p><strong>maxsize</strong> (<em>int</em>) – Maximum size of the internal queue. Defaults to 1.</p></li>
+<li><p><strong>disable</strong> (<em>bool</em>) – If True, run synchronously in the main thread/process without workers.</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Name for the generator, used in monitoring/logging.</p></li>
+<li><p><strong>method</strong> (<em>Method</em>) – Execution method, either “process” or “thread”.</p></li>
+<li><p><strong>queue_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="shutdown_queue.html#threaded_generator.shutdown_queue.Q" title="threaded_generator.shutdown_queue.Q"><em>Q</em></a><em>[</em><em>T</em><em>]</em><em>] </em><em>| </em><em>None</em>) – Custom queue class to use. Defaults to <code class="xref py py-class docutils literal notranslate"><span class="pre">multiprocessing.Queue</span></code> if method is “process”,
+or <code class="xref py py-class docutils literal notranslate"><span class="pre">queue.Queue</span></code> if method is “thread”.</p></li>
+<li><p><strong>monitor</strong> (<a class="reference internal" href="monitor.html#threaded_generator.monitor.Monitor" title="threaded_generator.monitor.Monitor"><em>Monitor</em></a><em> | </em><em>None</em>) – Monitor instance for tracking performance statistics.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>When using multiple workers (<cite>num_workers &gt; 1</cite>), the input iterable <cite>it</cite>
+<strong>must</strong> be a factory or a function wrapped with <a class="reference internal" href="#threaded_generator.threaded_generator.partial_generator" title="threaded_generator.threaded_generator.partial_generator"><code class="xref py py-func docutils literal notranslate"><span class="pre">partial_generator()</span></code></a>.
+Standard python generators cannot be pickled or restarted, so each worker
+needs a fresh iterator instance.</p>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="threaded_generator.threaded_generator.ParallelGenerator.join">
+<span class="sig-name descname"><span class="pre">join</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/threaded_generator.html#ParallelGenerator.join"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.threaded_generator.ParallelGenerator.join" title="Link to this definition">¶</a></dt>
+<dd><p>Wait for all workers to finish and check for errors propagated from workers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>RuntimeError</strong> – If an exception occurred in any worker.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="threaded_generator.threaded_generator.ParallelGenerator.terminate">
+<span class="sig-name descname"><span class="pre">terminate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/threaded_generator.html#ParallelGenerator.terminate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.threaded_generator.ParallelGenerator.terminate" title="Link to this definition">¶</a></dt>
+<dd><p>Signal the queue to shutdown immediately and wait for workers to join.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="utilities">
+<h2><a class="toc-backref" href="#id4" role="doc-backlink">Utilities</a><a class="headerlink" href="#utilities" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="threaded_generator.threaded_generator.partial_generator">
+<span class="sig-name descname"><span class="pre">partial_generator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">f</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/threaded_generator.html#partial_generator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.threaded_generator.partial_generator" title="Link to this definition">¶</a></dt>
+<dd><p>A decorator that transforms a generator function into one that returns a PartialGenerator.
+Decorate all generators that are passed to ParallelGenerator with this.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>f</strong> (<em>Callable</em><em>[</em><em>P</em><em>, </em><em>Iterator</em><em>[</em><em>T</em><em>]</em><em>]</em>) – The generator function to wrap.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A wrapper function that, when called, returns a PartialGenerator
+instance instead of immediately executing the generator logic.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Callable[P, <a class="reference internal" href="#threaded_generator.threaded_generator.PartialGenerator" title="threaded_generator.threaded_generator.PartialGenerator">PartialGenerator</a>[T]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="threaded_generator.threaded_generator.PartialGenerator">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">PartialGenerator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">f</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/threaded_generator.html#PartialGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.threaded_generator.PartialGenerator" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></p>
+<p>A wrapper class that delays the execution of a generator function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>f</strong> (<em>Callable</em><em>[</em><em>[</em><em>]</em><em>, </em><em>Iterator</em><em>[</em><em>T</em><em>]</em><em>]</em>) – A callable that takes no arguments and returns an Iterator[T].
+This is typically a functools.partial object.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="threaded_generator.threaded_generator.iter_queue">
+<span class="sig-name descname"><span class="pre">iter_queue</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">queue</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/threaded_generator.html#iter_queue"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.threaded_generator.iter_queue" title="Link to this definition">¶</a></dt>
+<dd><p>Generator that yields items from a ShutdownQueue until it is shut down.</p>
+<p>This serves as the consumer side of the pipeline. It continuously pulls items
+from the queue. When the producer worker finishes and the queue is shut down
+(raising a ShutDown exception internally or receiving a Sentinel), this
+generator catches the signal and stops yielding, effectively closing the stream.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>queue</strong> (<a class="reference internal" href="shutdown_queue.html#threaded_generator.shutdown_queue.SQ" title="threaded_generator.shutdown_queue.SQ"><em>SQ</em></a><em>[</em><em>T</em><em>]</em>) – The queue to consume items from.</p>
+</dd>
+<dt class="field-even">Yield<span class="colon">:</span></dt>
+<dd class="field-even"><p>Items retrieved from the queue.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Generator[T, None, None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Threaded Generator</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Threaded Generator</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#generators">Generators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#utilities">Utilities</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="shutdown_queue.html">Shutdown Queue</a></li>
+<li class="toctree-l1"><a class="reference internal" href="monitor.html">Monitor</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">Threaded Generator</a></li>
+      <li>Next: <a href="shutdown_queue.html" title="next chapter">Shutdown Queue</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Kwon-Young Choi.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/threaded_generator.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

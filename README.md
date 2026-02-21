@@ -1,13 +1,15 @@
-# ThreadedGenerator
+# Threaded Generator
 
-Buffer items from an iterable in a separate thread.
+Easily run iterators in background threads or processes to create parallel producer-consumer pipelines.
 
-This library provides `ThreadedGenerator`, a utility to wrap an iterable (like a generator or a slow I/O process) in a background thread. It buffers items in a `queue.Queue` so that the consumer and producer can work concurrently.
+This library provides utilities to wrap an iterable (like a generator, a slow I/O process, or a CPU-bound task) in a background thread or process. It buffers items in a queue so that the consumer and producer can work concurrently, smoothing out bursts and improving throughput.
 
-This is particularly useful when:
-*   The producer (the iterable) is slow (e.g., network requests, disk I/O).
-*   The consumer is slow.
-*   You want to smooth out bursts of processing.
+Key Features:
+*   **`ThreadedGenerator`**: Run an iterator in a background thread (good for I/O bound tasks).
+*   **`ProcessGenerator`**: Run an iterator in a background process (good for CPU bound tasks, avoids GIL).
+*   **`ParallelGenerator`**: Split the work of an iterator across multiple parallel workers.
+*   **`ShutdownQueue`**: A queue wrapper that handles graceful shutdown signaling between producers and consumers.
+*   **`Monitor`**: Real-time terminal visualization of queue sizes and throughput.
 
 ## Installation
 
@@ -15,63 +17,130 @@ This is particularly useful when:
 pip install threaded-generator
 ```
 
-*(Note: Adjust the package name based on your PyPI release)*
-
 ## Usage
 
-`ThreadedGenerator` supports two main usage patterns.
+### 1. Basic Threaded Generation (I/O Bound)
 
-### 1. Direct Iteration (Single Consumer)
-
-This is the simplest usage. It automatically manages the background thread lifecycle. When you start iterating, the thread starts; when you finish or stop, the thread is joined.
+Use `ThreadedGenerator` when your source is slow due to I/O (network, disk).
 
 ```python
 import time
 from threaded_generator import ThreadedGenerator
 
-def slow_producer():
+def slow_io_task():
     for i in range(5):
-        time.sleep(0.5)  # Simulate work
+        time.sleep(0.5)  # Simulate network/disk wait
         yield i
 
-# Wrap the generator
-# maxsize controls the buffer size
-gen = ThreadedGenerator(slow_producer(), maxsize=3)
+# Buffers up to 3 items in a background thread
+gen = ThreadedGenerator(slow_io_task(), maxsize=3)
 
-# Iterate just like a normal generator
 for item in gen:
     print(f"Got {item}")
 ```
 
-### 2. Shared Consumption (Multiple Consumers)
+### 2. Process Generation (CPU Bound)
 
-You can share a single underlying producer among multiple consumers using `enqueue()`. This requires manual lifecycle management using `join()` or `terminate()`.
+Use `ProcessGenerator` to bypass the GIL for CPU-intensive tasks.
 
 ```python
-from threaded_generator import ThreadedGenerator
+from threaded_generator import ProcessGenerator
 
-source = range(10)
-gen = ThreadedGenerator(source, maxsize=5)
+def heavy_computation():
+    for i in range(5):
+        # Simulate heavy CPU work
+        yield sum(range(1_000_000 * i))
 
-# Create two iterators sharing the same source
-it1 = gen.enqueue()
-it2 = gen.enqueue()
+gen = ProcessGenerator(heavy_computation(), maxsize=2)
 
-# Pull items from both
-print(next(it1)) # 0
-print(next(it2)) # 1
-print(next(it1)) # 2
-
-# Cleanup is mandatory!
-gen.join()
+for result in gen:
+    print(result)
 ```
 
-There are three ways to stop the generator and clean up resources:
+### 3. Parallel Processing (Multiple Workers)
 
-1.  **`gen.join()`**: Waits for the producer and consumers to finish normally, then join the thread and queue. Re-raises any exceptions found in the producer.
-2.  **`gen.terminate(immediate=True)`**: Forces immediate shutdown. Discards remaining items in the buffer and stops the thread.
-3.  **`gen.terminate(immediate=False)`**: Stop the producer thread but allows consumers to finish processing currently buffered items before stopping.
+Use `ParallelGenerator` with `num_workers > 1` to distribute work.
 
-## Error Handling
+**Important:** You must decorate the generator function with `@partial_generator`. This allows each worker to create its own fresh instance of the iterator.
 
-Exceptions raised within the source iterable are caught in the background thread and re-raised in the main thread (wrapped in a `RuntimeError`) when `join()` is called or iteration completes.
+```python
+from threaded_generator import ParallelGenerator, partial_generator
+import time
+
+@partial_generator
+def process_data(x):
+    # Simulate work
+    time.sleep(0.5)
+    yield x * x
+
+# Spawns 4 worker processes to process items in parallel
+gen = ParallelGenerator(process_data(10), num_workers=4, maxsize=10)
+
+for res in gen:
+    print(res)
+```
+
+### 4. Monitoring
+
+Visualize the performance of your pipeline in the terminal.
+
+```python
+from threaded_generator import ThreadedGenerator, Monitor
+import time
+
+monitor = Monitor()
+
+# Pass the monitor to the generator
+gen = ThreadedGenerator(range(100), monitor=monitor, name="MyGen")
+
+with monitor:
+    for item in gen:
+        time.sleep(0.1) # Simulate slow consumption
+```
+
+## Advanced Usage
+
+### Shared Consumption
+
+You can share a single underlying producer among multiple consumers using the context manager.
+
+```python
+gen = ThreadedGenerator(range(10), maxsize=5)
+
+with gen:
+    it1 = iter(gen)
+    it2 = iter(gen)
+
+    # Items are distributed between it1 and it2
+    print(next(it1))
+    print(next(it2))
+```
+
+### ShutdownQueue
+
+Use `ShutdownQueue` directly if you need a queue that supports graceful shutdown signaling.
+
+```python
+import multiprocessing as mp
+from queue import ShutDown
+from threaded_generator import ShutdownQueue
+
+# Create a shutdown-capable queue backed by a multiprocessing Queue
+sq = ShutdownQueue(maxsize=10, queue_type=mp.Queue)
+
+# Producer
+sq.put(1)
+sq.put(2)
+sq.shutdown()  # Signal end of stream
+
+# Consumer
+try:
+    while True:
+        print(sq.get())
+except ShutDown:
+    print("Queue shut down")
+```
+
+### Error Handling
+
+Exceptions raised within the source iterable are caught in the background worker and re-raised in the main thread (wrapped in a `RuntimeError`) when `join()` is called or iteration completes.

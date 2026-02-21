@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>threaded_generator.threaded_generator &#8212; Threaded Generator  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for threaded_generator.threaded_generator</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">This module provides generator wrappers that execute source iterators in separate threads</span>
+<span class="sd">or processes, allowing for parallel producer-consumer pipelines.</span>
+
+<span class="sd">Key components:</span>
+
+<span class="sd">- :class:`ThreadedGenerator`: Runs the source iterator in a separate thread.</span>
+<span class="sd">- :class:`ProcessGenerator`: Runs the source iterator in a separate process.</span>
+<span class="sd">- :class:`ParallelGenerator`: Base class supporting multiple workers (threads or processes).</span>
+
+<span class="sd">Examples</span>
+<span class="sd">--------</span>
+<span class="sd">.. code-block:: python</span>
+
+<span class="sd">    &gt;&gt;&gt; import time</span>
+<span class="sd">    &gt;&gt;&gt; def slow_source():</span>
+<span class="sd">    ...     for i in range(5):</span>
+<span class="sd">    ...         time.sleep(0.1)</span>
+<span class="sd">    ...         yield i</span>
+<span class="sd">    ...</span>
+<span class="sd">    &gt;&gt;&gt; # Wrap the slow source in a threaded generator</span>
+<span class="sd">    &gt;&gt;&gt; gen = ThreadedGenerator(slow_source(), maxsize=3)</span>
+<span class="sd">    &gt;&gt;&gt; for item in gen:</span>
+<span class="sd">    ...     print(item)  # Consumption happens in main thread, production in background</span>
+<span class="sd">    0</span>
+<span class="sd">    1</span>
+<span class="sd">    2</span>
+<span class="sd">    3</span>
+<span class="sd">    4</span>
+
+<span class="sd">    &gt;&gt;&gt; # Using ProcessGenerator for CPU-bound tasks</span>
+<span class="sd">    &gt;&gt;&gt; def cpu_bound_source():</span>
+<span class="sd">    ...     for i in range(5):</span>
+<span class="sd">    ...         yield sum(range(1000000 * i))</span>
+<span class="sd">    ...</span>
+<span class="sd">    &gt;&gt;&gt; gen = ProcessGenerator(cpu_bound_source(), maxsize=2)</span>
+<span class="sd">    &gt;&gt;&gt; list(gen)</span>
+<span class="sd">    [0, 0, 1999999000000, ...]</span>
+
+<span class="sd">    &gt;&gt;&gt; # Using ParallelGenerator with multiple workers</span>
+<span class="sd">    &gt;&gt;&gt; # Note: You must wrap the generator function with @partial_generator.</span>
+<span class="sd">    &gt;&gt;&gt; # This is required because standard generators cannot be pickled or restarted.</span>
+<span class="sd">    &gt;&gt;&gt; # The wrapper delays execution so each worker process can create its own</span>
+<span class="sd">    &gt;&gt;&gt; # fresh iterator instance.</span>
+<span class="sd">    &gt;&gt;&gt; @partial_generator</span>
+<span class="sd">    ... def parallel_source(x):</span>
+<span class="sd">    ...     yield x * x</span>
+<span class="sd">    ...</span>
+<span class="sd">    &gt;&gt;&gt; # This will spawn 4 worker processes</span>
+<span class="sd">    &gt;&gt;&gt; gen = ParallelGenerator(parallel_source(2), num_workers=4)</span>
+<span class="sd">    &gt;&gt;&gt; list(gen)</span>
+<span class="sd">    [4, 4, 4, 4]</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Iterable</span><span class="p">,</span>
+    <span class="n">Type</span><span class="p">,</span>
+    <span class="n">Generator</span><span class="p">,</span>
+    <span class="n">Literal</span><span class="p">,</span>
+    <span class="n">Iterator</span><span class="p">,</span>
+    <span class="n">Callable</span><span class="p">,</span>
+    <span class="n">cast</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">wraps</span><span class="p">,</span> <span class="n">partial</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">multiprocessing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">mp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">multiprocessing.synchronize</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ms</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">multiprocessing.queues</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">mq</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">multiprocessing.sharedctypes</span><span class="w"> </span><span class="kn">import</span> <span class="n">Synchronized</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">queue</span><span class="w"> </span><span class="kn">import</span> <span class="n">Queue</span><span class="p">,</span> <span class="n">ShutDown</span><span class="p">,</span> <span class="n">Empty</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">th</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.shutdown_queue</span><span class="w"> </span><span class="kn">import</span> <span class="n">Q</span><span class="p">,</span> <span class="n">SQ</span><span class="p">,</span> <span class="n">ShutdownQueue</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.monitor</span><span class="w"> </span><span class="kn">import</span> <span class="n">Monitor</span>
+
+
+<div class="viewcode-block" id="PartialGenerator">
+<a class="viewcode-back" href="../../threaded_generator.html#threaded_generator.threaded_generator.PartialGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PartialGenerator</span><span class="p">[</span><span class="n">T</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A wrapper class that delays the execution of a generator function.</span>
+
+<span class="sd">    :param f: A callable that takes no arguments and returns an Iterator[T].</span>
+<span class="sd">              This is typically a functools.partial object.</span>
+<span class="sd">    :type f: Callable[[], Iterator[T]]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">T</span><span class="p">]]):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">f</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">T</span><span class="p">]]</span> <span class="o">=</span> <span class="n">f</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">T</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Execute the stored callable to create and return the iterator.</span>
+
+<span class="sd">        :return: The iterator resulting from calling the stored function.</span>
+<span class="sd">        :rtype: Iterator[T]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">f</span><span class="p">())</span></div>
+
+
+
+<div class="viewcode-block" id="partial_generator">
+<a class="viewcode-back" href="../../threaded_generator.html#threaded_generator.threaded_generator.partial_generator">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">partial_generator</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="o">**</span><span class="n">P</span><span class="p">](</span>
+    <span class="n">f</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="n">P</span><span class="p">,</span> <span class="n">Iterator</span><span class="p">[</span><span class="n">T</span><span class="p">]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span><span class="n">P</span><span class="p">,</span> <span class="n">PartialGenerator</span><span class="p">[</span><span class="n">T</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A decorator that transforms a generator function into one that returns a PartialGenerator.</span>
+<span class="sd">    Decorate all generators that are passed to ParallelGenerator with this.</span>
+
+<span class="sd">    :param f: The generator function to wrap.</span>
+<span class="sd">    :type f: Callable[P, Iterator[T]]</span>
+<span class="sd">    :return: A wrapper function that, when called, returns a PartialGenerator</span>
+<span class="sd">             instance instead of immediately executing the generator logic.</span>
+<span class="sd">    :rtype: Callable[P, PartialGenerator[T]]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@wraps</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gen</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">P</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">P</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PartialGenerator</span><span class="p">[</span><span class="n">T</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="n">PartialGenerator</span><span class="p">(</span><span class="n">partial</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">gen</span></div>
+
+
+
+<span class="n">Task</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span> <span class="o">|</span> <span class="n">th</span><span class="o">.</span><span class="n">Thread</span>
+<span class="n">Method</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;process&quot;</span><span class="p">,</span> <span class="s2">&quot;thread&quot;</span><span class="p">]</span>
+<span class="n">method_task</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">Method</span><span class="p">,</span> <span class="n">Type</span><span class="p">[</span><span class="n">Task</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;process&quot;</span><span class="p">:</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">,</span>
+    <span class="s2">&quot;thread&quot;</span><span class="p">:</span> <span class="n">th</span><span class="o">.</span><span class="n">Thread</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="n">default_method_queue</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">Method</span><span class="p">,</span> <span class="n">Type</span><span class="p">[</span><span class="n">Q</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;process&quot;</span><span class="p">:</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">,</span>
+    <span class="s2">&quot;thread&quot;</span><span class="p">:</span> <span class="n">Queue</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">method_queue</span><span class="p">[</span><span class="n">T</span><span class="p">](</span>
+    <span class="n">method</span><span class="p">:</span> <span class="n">Method</span><span class="p">,</span> <span class="n">queue_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Q</span><span class="p">[</span><span class="n">T</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Type</span><span class="p">[</span><span class="n">SQ</span><span class="p">[</span><span class="n">T</span><span class="p">]]:</span>
+    <span class="k">if</span> <span class="n">queue_type</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">queue_type</span> <span class="o">=</span> <span class="n">default_method_queue</span><span class="p">[</span><span class="n">method</span><span class="p">]</span>
+    <span class="n">shutdown_queue_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">SQ</span><span class="p">[</span><span class="n">T</span><span class="p">]]</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">queue_type</span><span class="p">,</span> <span class="s2">&quot;shutdown&quot;</span><span class="p">):</span>
+        <span class="n">shutdown_queue_type</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Type</span><span class="p">[</span><span class="n">SQ</span><span class="p">[</span><span class="n">T</span><span class="p">]],</span> <span class="n">queue_type</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">shutdown_queue_type</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
+            <span class="n">Type</span><span class="p">[</span><span class="n">ShutdownQueue</span><span class="p">[</span><span class="n">T</span><span class="p">]],</span>
+            <span class="n">partial</span><span class="p">(</span><span class="n">ShutdownQueue</span><span class="p">,</span> <span class="n">queue_type</span><span class="o">=</span><span class="n">queue_type</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">shutdown_queue_type</span>
+
+
+<div class="viewcode-block" id="iter_queue">
+<a class="viewcode-back" href="../../threaded_generator.html#threaded_generator.threaded_generator.iter_queue">[docs]</a>
+<span class="nd">@partial_generator</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">iter_queue</span><span class="p">[</span><span class="n">T</span><span class="p">](</span><span class="n">queue</span><span class="p">:</span> <span class="n">SQ</span><span class="p">[</span><span class="n">T</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="n">T</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generator that yields items from a ShutdownQueue until it is shut down.</span>
+
+<span class="sd">    This serves as the consumer side of the pipeline. It continuously pulls items</span>
+<span class="sd">    from the queue. When the producer worker finishes and the queue is shut down</span>
+<span class="sd">    (raising a ShutDown exception internally or receiving a Sentinel), this</span>
+<span class="sd">    generator catches the signal and stops yielding, effectively closing the stream.</span>
+
+<span class="sd">    :param queue: The queue to consume items from.</span>
+<span class="sd">    :type queue: SQ[T]</span>
+<span class="sd">    :yield: Items retrieved from the queue.</span>
+<span class="sd">    :rtype: Generator[T, None, None]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+            <span class="k">yield</span> <span class="n">x</span>
+    <span class="k">except</span> <span class="n">ShutDown</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">queue</span><span class="o">.</span><span class="n">shutdown</span><span class="p">(</span><span class="n">immediate</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">iterable_worker</span><span class="p">[</span><span class="n">T</span><span class="p">](</span>
+    <span class="n">it</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">T</span><span class="p">],</span>
+    <span class="n">queue</span><span class="p">:</span> <span class="n">SQ</span><span class="p">[</span><span class="n">T</span><span class="p">],</span>
+    <span class="n">barrier</span><span class="p">:</span> <span class="n">ms</span><span class="o">.</span><span class="n">Barrier</span><span class="p">,</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">worker_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">error_queue</span><span class="p">:</span> <span class="n">Q</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="ne">Exception</span><span class="p">]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">it</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">ShutDown</span><span class="p">:</span>
+                <span class="k">break</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">error_queue</span><span class="o">.</span><span class="n">put</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">e</span><span class="p">))</span>
+        <span class="n">queue</span><span class="o">.</span><span class="n">shutdown</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">barrier</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+        <span class="n">queue</span><span class="o">.</span><span class="n">shutdown</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="ParallelGenerator">
+<a class="viewcode-back" href="../../threaded_generator.html#threaded_generator.threaded_generator.ParallelGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ParallelGenerator</span><span class="p">[</span><span class="n">T</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A generator wrapper that executes the source iterator in separate workers (threads or processes).</span>
+
+<span class="sd">    :param it: The source iterable to consume.</span>
+<span class="sd">    :type it: Iterable[T]</span>
+<span class="sd">    :param num_workers: Number of worker processes/threads to spawn. Defaults to 1.</span>
+<span class="sd">    :type num_workers: int</span>
+<span class="sd">    :param maxsize: Maximum size of the internal queue. Defaults to 1.</span>
+<span class="sd">    :type maxsize: int</span>
+<span class="sd">    :param disable: If True, run synchronously in the main thread/process without workers.</span>
+<span class="sd">    :type disable: bool</span>
+<span class="sd">    :param name: Name for the generator, used in monitoring/logging.</span>
+<span class="sd">    :type name: str | None</span>
+<span class="sd">    :param method: Execution method, either &quot;process&quot; or &quot;thread&quot;.</span>
+<span class="sd">    :type method: Method</span>
+<span class="sd">    :param queue_type: Custom queue class to use. Defaults to :class:`multiprocessing.Queue` if method is &quot;process&quot;,</span>
+<span class="sd">                       or :class:`queue.Queue` if method is &quot;thread&quot;.</span>
+<span class="sd">    :type queue_type: Type[Q[T]] | None</span>
+<span class="sd">    :param monitor: Monitor instance for tracking performance statistics.</span>
+<span class="sd">    :type monitor: Monitor | None</span>
+
+<span class="sd">    .. warning::</span>
+<span class="sd">       When using multiple workers (`num_workers &gt; 1`), the input iterable `it`</span>
+<span class="sd">       **must** be a factory or a function wrapped with :func:`partial_generator`.</span>
+<span class="sd">       Standard python generators cannot be pickled or restarted, so each worker</span>
+<span class="sd">       needs a fresh iterator instance.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">it</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">T</span><span class="p">],</span>
+        <span class="n">num_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">maxsize</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">disable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">method</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="s2">&quot;process&quot;</span><span class="p">,</span>
+        <span class="n">queue_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Q</span><span class="p">[</span><span class="n">T</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">monitor</span><span class="p">:</span> <span class="n">Monitor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">it</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">T</span><span class="p">]</span> <span class="o">=</span> <span class="n">it</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">disable</span> <span class="k">else</span> <span class="n">num_workers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refcount</span><span class="p">:</span> <span class="n">Synchronized</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">error_queue</span><span class="p">:</span> <span class="n">mq</span><span class="o">.</span><span class="n">Queue</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="ne">Exception</span><span class="p">]]</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">maxsize</span> <span class="o">=</span> <span class="n">maxsize</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">refcount</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Value</span><span class="p">(</span><span class="s2">&quot;i&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span> <span class="o">=</span> <span class="n">method_queue</span><span class="p">(</span><span class="n">method</span><span class="p">,</span> <span class="n">queue_type</span><span class="p">)(</span><span class="n">maxsize</span><span class="o">=</span><span class="n">maxsize</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="n">method</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">workers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Task</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">name</span> <span class="ow">or</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">(</span><span class="si">{</span><span class="n">it</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">monitor</span> <span class="o">=</span> <span class="n">monitor</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ParallelGenerator[T]&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Start the worker processes/threads and prepare the generator.</span>
+
+<span class="sd">        :return: The instance itself.</span>
+<span class="sd">        :rtype: ParallelGenerator[T]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">refcount</span><span class="o">.</span><span class="n">get_lock</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">refcount</span><span class="o">.</span><span class="n">value</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">refcount</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_workers</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">barrier</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Barrier</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_workers</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">is_shutdown</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">workers</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_workers</span><span class="p">):</span>
+                    <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="n">worker</span> <span class="o">=</span> <span class="n">method_task</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">method</span><span class="p">](</span>
+                        <span class="n">target</span><span class="o">=</span><span class="n">iterable_worker</span><span class="p">,</span>
+                        <span class="n">args</span><span class="o">=</span><span class="p">(</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">iter_stat</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">it</span><span class="p">,</span> <span class="s2">&quot;p&quot;</span><span class="p">),</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">,</span>
+                            <span class="n">barrier</span><span class="p">,</span>
+                            <span class="n">name</span><span class="p">,</span>
+                            <span class="n">i</span><span class="p">,</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">error_queue</span><span class="p">,</span>
+                        <span class="p">),</span>
+                        <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">worker</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">workers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">worker</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_val</span><span class="p">,</span> <span class="n">exc_tb</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Clean up resources, joining or terminating workers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">exc_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+
+<div class="viewcode-block" id="ParallelGenerator.join">
+<a class="viewcode-back" href="../../threaded_generator.html#threaded_generator.threaded_generator.ParallelGenerator.join">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">join</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Wait for all workers to finish and check for errors propagated from workers.</span>
+
+<span class="sd">        :raises RuntimeError: If an exception occurred in any worker.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">worker</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">workers</span><span class="p">:</span>
+            <span class="n">worker</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">refcount</span><span class="o">.</span><span class="n">get_lock</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">refcount</span><span class="o">.</span><span class="n">value</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">name</span><span class="p">,</span> <span class="n">e</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_queue</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Exception from </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
+            <span class="k">except</span> <span class="n">Empty</span><span class="p">:</span>
+                <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="ParallelGenerator.terminate">
+<a class="viewcode-back" href="../../threaded_generator.html#threaded_generator.threaded_generator.ParallelGenerator.terminate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">terminate</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Signal the queue to shutdown immediately and wait for workers to join.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">shutdown</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">()</span></div>
+
+
+    <span class="nd">@partial_generator</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">iter_stat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">it</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">T</span><span class="p">],</span> <span class="n">t</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;p&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="n">T</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">monitor</span><span class="p">:</span>
+            <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span>
+            <span class="n">tid</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">(),</span> <span class="n">th</span><span class="o">.</span><span class="n">get_ident</span><span class="p">())</span>
+            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">it</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="n">x</span>
+                <span class="n">t1</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span>
+                <span class="n">delta</span> <span class="o">=</span> <span class="n">t1</span> <span class="o">-</span> <span class="n">t0</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">monitor</span><span class="o">.</span><span class="n">put</span><span class="p">(</span>
+                    <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">delta</span><span class="p">,</span> <span class="n">tid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">qsize</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">maxsize</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">yield from</span> <span class="n">it</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="n">T</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Iterate over the items produced by the generator.</span>
+
+<span class="sd">        :yield: Items from the queue (or directly from source if workers disabled).</span>
+<span class="sd">        :rtype: Generator[T, None, None]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_workers</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_stat</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">it</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="p">:</span>
+                <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">iter_stat</span><span class="p">(</span><span class="n">iter_queue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">),</span> <span class="s2">&quot;c&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ThreadedGenerator">
+<a class="viewcode-back" href="../../threaded_generator.html#threaded_generator.threaded_generator.ThreadedGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ThreadedGenerator</span><span class="p">[</span><span class="n">T</span><span class="p">](</span><span class="n">ParallelGenerator</span><span class="p">[</span><span class="n">T</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A generator that runs the source iterator in a separate thread.</span>
+
+<span class="sd">    Communication is done using a :class:`queue.Queue` by default.</span>
+<span class="sd">    If this is chained with a process based Generator, you need to use</span>
+<span class="sd">    a :class:`multiprocessing.Queue` for the queue_type.</span>
+
+<span class="sd">    :param it: The source iterable.</span>
+<span class="sd">    :type it: Iterable[T]</span>
+<span class="sd">    :param maxsize: Max queue size.</span>
+<span class="sd">    :type maxsize: int</span>
+<span class="sd">    :param disable: If True, run in main thread.</span>
+<span class="sd">    :type disable: bool</span>
+<span class="sd">    :param name: Name for monitoring.</span>
+<span class="sd">    :type name: str | None</span>
+<span class="sd">    :param queue_type: Custom queue type.</span>
+<span class="sd">    :type queue_type: Type[Q[T]] | None</span>
+<span class="sd">    :param monitor: Monitor instance.</span>
+<span class="sd">    :type monitor: Monitor | None</span>
+
+<span class="sd">    Example</span>
+<span class="sd">    -------</span>
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        &gt;&gt;&gt; gen = ThreadedGenerator(range(10), maxsize=5)</span>
+<span class="sd">        &gt;&gt;&gt; list(gen)</span>
+<span class="sd">        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">it</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">T</span><span class="p">],</span>
+        <span class="n">maxsize</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">disable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">queue_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Q</span><span class="p">[</span><span class="n">T</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">monitor</span><span class="p">:</span> <span class="n">Monitor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">it</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">maxsize</span><span class="p">,</span> <span class="n">disable</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="s2">&quot;thread&quot;</span><span class="p">,</span> <span class="n">queue_type</span><span class="p">,</span> <span class="n">monitor</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ProcessGenerator">
+<a class="viewcode-back" href="../../threaded_generator.html#threaded_generator.threaded_generator.ProcessGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ProcessGenerator</span><span class="p">[</span><span class="n">T</span><span class="p">](</span><span class="n">ParallelGenerator</span><span class="p">[</span><span class="n">T</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A generator that runs the source iterator in a separate process.</span>
+
+<span class="sd">    Communication is done using a :class:`multiprocessing.Queue` by default.</span>
+
+<span class="sd">    :param it: The source iterable.</span>
+<span class="sd">    :type it: Iterable[T]</span>
+<span class="sd">    :param maxsize: Max queue size.</span>
+<span class="sd">    :type maxsize: int</span>
+<span class="sd">    :param disable: If True, run in main process.</span>
+<span class="sd">    :type disable: bool</span>
+<span class="sd">    :param name: Name for monitoring.</span>
+<span class="sd">    :type name: str | None</span>
+<span class="sd">    :param queue_type: Custom queue type.</span>
+<span class="sd">    :type queue_type: Type[Q[T]] | None</span>
+<span class="sd">    :param monitor: Monitor instance.</span>
+<span class="sd">    :type monitor: Monitor | None</span>
+
+<span class="sd">    Example</span>
+<span class="sd">    -------</span>
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">        &gt;&gt;&gt; gen = ProcessGenerator(range(10), maxsize=5)</span>
+<span class="sd">        &gt;&gt;&gt; list(gen)</span>
+<span class="sd">        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">it</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">T</span><span class="p">],</span>
+        <span class="n">maxsize</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">disable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">queue_type</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Q</span><span class="p">[</span><span class="n">T</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">monitor</span><span class="p">:</span> <span class="n">Monitor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">it</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">maxsize</span><span class="p">,</span> <span class="n">disable</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="s2">&quot;process&quot;</span><span class="p">,</span> <span class="n">queue_type</span><span class="p">,</span> <span class="n">monitor</span>
+        <span class="p">)</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">Threaded Generator</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../threaded_generator.html">Threaded Generator</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../shutdown_queue.html">Shutdown Queue</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../monitor.html">Monitor</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Kwon-Young Choi.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Shutdown Queue &#8212; Threaded Generator  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Monitor" href="monitor.html" />
+    <link rel="prev" title="Threaded Generator" href="threaded_generator.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-threaded_generator.shutdown_queue">
+<span id="shutdown-queue"></span><h1>Shutdown Queue<a class="headerlink" href="#module-threaded_generator.shutdown_queue" title="Link to this heading">¶</a></h1>
+<p>This module provides a queue wrapper that supports graceful shutdown signaling.</p>
+<p>It allows producers to signal that no more items will be produced, and consumers
+to detect this signal and stop iteration. It handles both immediate shutdowns
+(aborting operations) and graceful shutdowns (processing remaining items).</p>
+<p>Key components:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#threaded_generator.shutdown_queue.ShutdownQueue" title="threaded_generator.shutdown_queue.ShutdownQueue"><code class="xref py py-class docutils literal notranslate"><span class="pre">ShutdownQueue</span></code></a>: A wrapper around standard queues (like multiprocessing.Queue)
+that adds shutdown semantics.</p></li>
+</ul>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">multiprocessing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">mp</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">queue</span><span class="w"> </span><span class="kn">import</span> <span class="n">Empty</span><span class="p">,</span> <span class="n">ShutDown</span>
+<span class="gp">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Create a shutdown-capable queue</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">sq</span> <span class="o">=</span> <span class="n">ShutdownQueue</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">queue_type</span><span class="o">=</span><span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Producer</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">sq</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">sq</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">sq</span><span class="o">.</span><span class="n">shutdown</span><span class="p">()</span>  <span class="c1"># Signal end of stream</span>
+<span class="gp">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Consumer</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">try</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<span class="gp">... </span>        <span class="nb">print</span><span class="p">(</span><span class="n">sq</span><span class="o">.</span><span class="n">get</span><span class="p">())</span>
+<span class="gp">... </span><span class="k">except</span> <span class="n">ShutDown</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Queue shut down&quot;</span><span class="p">)</span>
+<span class="go">1</span>
+<span class="go">2</span>
+<span class="go">Queue shut down</span>
+</pre></div>
+</div>
+<dl class="py class">
+<dt class="sig sig-object py" id="threaded_generator.shutdown_queue.ShutdownQueue">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">ShutdownQueue</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">maxsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">queue_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poll_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/shutdown_queue.html#ShutdownQueue"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.shutdown_queue.ShutdownQueue" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></p>
+<p>A wrapper class that adds shutdown capabilities to a standard queue.</p>
+<p>This class wraps a queue implementation (like <code class="xref py py-class docutils literal notranslate"><span class="pre">multiprocessing.Queue</span></code>)
+and adds mechanisms to signal shutdown. When shut down, consumers reading
+from the queue will eventually receive a <code class="xref py py-class docutils literal notranslate"><span class="pre">queue.ShutDown</span></code> exception.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>maxsize</strong> (<em>int</em>) – Maximum size of the queue. Defaults to 0 (infinite).</p></li>
+<li><p><strong>queue_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="#threaded_generator.shutdown_queue.Q" title="threaded_generator.shutdown_queue.Q"><em>Q</em></a><em>] </em><em>| </em><em>None</em>) – The class of the underlying queue to use. Defaults to <code class="xref py py-class docutils literal notranslate"><span class="pre">multiprocessing.Queue</span></code>.</p></li>
+<li><p><strong>poll_time</strong> (<em>float</em>) – Interval in seconds to check for shutdown signals while blocking.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="threaded_generator.shutdown_queue.ShutdownQueue.get">
+<span class="sig-name descname"><span class="pre">get</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/shutdown_queue.html#ShutdownQueue.get"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.shutdown_queue.ShutdownQueue.get" title="Link to this definition">¶</a></dt>
+<dd><p>Remove and return an item from the queue.</p>
+<p>If the queue is empty and shut down, raises <code class="xref py py-class docutils literal notranslate"><span class="pre">queue.ShutDown</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>block</strong> (<em>bool</em>) – If True, block until an item is available.</p></li>
+<li><p><strong>timeout</strong> (<em>float</em><em> | </em><em>None</em>) – Time to wait if blocking.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The item retrieved from the queue.</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ShutDown</strong> – If the queue has been shut down.</p></li>
+<li><p><strong>Empty</strong> – If the queue is empty and block is False or timeout reached (before shutdown).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>T</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="threaded_generator.shutdown_queue.ShutdownQueue.is_shutdown">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">is_shutdown</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></span><a class="headerlink" href="#threaded_generator.shutdown_queue.ShutdownQueue.is_shutdown" title="Link to this definition">¶</a></dt>
+<dd><p>Check or set the shutdown signal.</p>
+<dl class="simple">
+<dt>Getter:</dt><dd><p>Returns True if the shutdown signal has been set.</p>
+</dd>
+<dt>Setter:</dt><dd><p>Manually set or clear the shutdown state.
+Clearing shutdown state (False) also drains the queue of existing items to reset it.
+Setting it to True triggers a shutdown.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="threaded_generator.shutdown_queue.ShutdownQueue.put">
+<span class="sig-name descname"><span class="pre">put</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/shutdown_queue.html#ShutdownQueue.put"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.shutdown_queue.ShutdownQueue.put" title="Link to this definition">¶</a></dt>
+<dd><p>Put an item into the queue.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>obj</strong> (<em>T</em>) – The item to put.</p></li>
+<li><p><strong>block</strong> (<em>bool</em>) – If True, block if the queue is full.</p></li>
+<li><p><strong>timeout</strong> (<em>float</em><em> | </em><em>None</em>) – Time to wait if blocking.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ShutDown</strong> – If the queue has been shut down.</p></li>
+<li><p><strong>Full</strong> – If the queue is full and block is False or timeout reached.</p></li>
+</ul>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="threaded_generator.shutdown_queue.ShutdownQueue.qsize">
+<span class="sig-name descname"><span class="pre">qsize</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/shutdown_queue.html#ShutdownQueue.qsize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.shutdown_queue.ShutdownQueue.qsize" title="Link to this definition">¶</a></dt>
+<dd><p>Return the approximate size of the queue.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="threaded_generator.shutdown_queue.ShutdownQueue.shutdown">
+<span class="sig-name descname"><span class="pre">shutdown</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">immediate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/shutdown_queue.html#ShutdownQueue.shutdown"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.shutdown_queue.ShutdownQueue.shutdown" title="Link to this definition">¶</a></dt>
+<dd><p>Signal the queue to shut down.
+Can block up to self.poll_time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>immediate</strong> (<em>bool</em>) – If True, consumers raise ShutDown immediately upon next access
+without draining remaining items. If False, consumers drain
+the queue until the Sentinel is reached.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="threaded_generator.shutdown_queue.SQ">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">SQ</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">maxsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/shutdown_queue.html#SQ"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.shutdown_queue.SQ" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#threaded_generator.shutdown_queue.Q" title="threaded_generator.shutdown_queue.Q"><code class="xref py py-class docutils literal notranslate"><span class="pre">Q</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Protocol</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></p>
+<p>Protocol for a Queue that supports shutdown operations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>maxsize</strong> (<em>int</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="threaded_generator.shutdown_queue.Q">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Q</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">maxsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/threaded_generator/shutdown_queue.html#Q"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#threaded_generator.shutdown_queue.Q" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Protocol</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Generic</span></code></p>
+<p>Protocol for a standard Queue interface.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>maxsize</strong> (<em>int</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Threaded Generator</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="threaded_generator.html">Threaded Generator</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Shutdown Queue</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="monitor.html">Monitor</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="threaded_generator.html" title="previous chapter">Threaded Generator</a></li>
+      <li>Next: <a href="monitor.html" title="next chapter">Monitor</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Kwon-Young Choi.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/shutdown_queue.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
