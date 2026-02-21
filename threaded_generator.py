@@ -53,6 +53,14 @@ class ThreadedGenerator(Generic[T]):
         self.thread.start()
 
     def enqueue(self) -> Queue[T]:
+        """
+        Start the generator if needed and return the underlying queue.
+
+        This enables concurrent access to the iterator items via the queue.
+
+        Returns:
+            Queue[T]: The queue buffering the iterator items.
+        """
         with self.lock:
             if self.thread is None:
                 self.start()
@@ -75,6 +83,12 @@ class ThreadedGenerator(Generic[T]):
                 self.join()
 
     def join(self) -> None:
+        """
+        Stop the generator, join the thread, and re-raise any exceptions.
+
+        Raises:
+            RuntimeError: If an exception occurred in the worker thread.
+        """
         self.queue.shutdown(immediate=True)
         if self.thread:
             self.thread.join()
