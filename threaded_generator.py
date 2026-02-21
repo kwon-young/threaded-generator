@@ -22,6 +22,9 @@ class ThreadedGenerator(Generic[T]):
        `join()` to ensure resources are cleaned up. To restart iteration with
        `enqueue`, `join()` must be called first.
 
+    Calling `__iter__` after `enqueue` is incompatible; `__iter__` attempts to
+    acquire the lock and will block until `join()` has been called to release it.
+
     The underlying iterable is assumed to be not thread-safe, so only one
     worker thread buffers items into the queue.
 
