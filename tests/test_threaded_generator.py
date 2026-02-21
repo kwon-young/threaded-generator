@@ -1,4 +1,10 @@
 import unittest
+import sys
+import os
+
+# Ensure we can import from src if running locally without installation
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+
 from threaded_generator import ThreadedGenerator
 
 
