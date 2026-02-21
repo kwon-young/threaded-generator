@@ -10,23 +10,14 @@ class ThreadedGenerator(Generic[T]):
     """
     Buffer items from an iterable in a separate thread (Python > 3.13).
 
-    This class supports two usage patterns:
-    1. Direct iteration (`__iter__`):
-       The simplest way to use the generator. It handles starting the thread
-       and joining it when iteration completes. Only one consumer can iterate
-       at a time. Restarting iteration will also restart the underlying iterable.
+    Supports two usage patterns:
+    1. Direct iteration (`__iter__`): Single consumer, auto-manages thread/lifecycle.
+       Restarts underlying iterable on new iteration. Blocks if lock held.
+    2. Shared consumption (`enqueue` + `join`): Concurrent consumers share one
+       iterable. Requires manual `join()` to cleanup/release lock before restart.
 
-    2. Shared consumption (`enqueue` + `join`):
-       Multiple consumers can call `enqueue()` to pull items from the same
-       underlying iterable concurrently. The main thread must eventually call
-       `join()` to ensure resources are cleaned up. To restart iteration with
-       `enqueue`, `join()` must be called first.
-
-    Calling `__iter__` after `enqueue` is incompatible; `__iter__` attempts to
-    acquire the lock and will block until `join()` has been called to release it.
-
-    The underlying iterable is assumed to be not thread-safe, so only one
-    worker thread buffers items into the queue.
+    `__iter__` blocks if `enqueue` holds the lock (wait for `join()`).
+    Assumes underlying iterable is not thread-safe (single producer).
 
     Example:
         >>> list(ThreadedGenerator(range(3), maxsize=2))
@@ -71,14 +62,8 @@ class ThreadedGenerator(Generic[T]):
 
     def enqueue(self) -> Generator[T]:
         """
-        Return a generator that yields items from the shared queue.
-
-        This enables the "Shared consumption" pattern where multiple consumers
-        process items from the same source iterable in parallel. The generator
-        thread starts automatically if it isn't running.
-
-        The caller is responsible for eventually calling `join()` to clean up
-        resources (thread and queue).
+        Return a generator yielding from the shared queue ("Shared consumption").
+        Starts thread if needed. Caller must eventually call `join()` to cleanup.
 
         Returns:
             Generator[T]: A generator yielding items from the queue.
@@ -96,14 +81,8 @@ class ThreadedGenerator(Generic[T]):
 
     def __iter__(self) -> Generator[T]:
         """
-        Iterate over buffered items ("Direct iteration" pattern).
-
-        This method manages the full lifecycle: it acquires the lock, starts
-        the background thread, yields items, and ensures cleanup via `join()`
-        when iteration completes or fails.
-
-        It is incompatible with `enqueue`: if the lock is held (by `enqueue`
-        or another `__iter__`), this method will block until `join()` is called.
+        Iterate over buffered items ("Direct iteration"). Manages lifecycle (start/join).
+        Blocks if lock held (by `enqueue`/`__iter__`) until `join()` is called.
         """
         self.start(blocking=True)
         try:
@@ -117,11 +96,8 @@ class ThreadedGenerator(Generic[T]):
 
     def join(self) -> None:
         """
-        Join the thread and queue, and re-raise any exceptions.
-
-        This method must be called when using `enqueue` to ensure resources
-        are cleaned up and the lock is released. It is called automatically
-        when using `__iter__`.
+        Join thread/queue, release lock, and re-raise exceptions.
+        Mandatory for `enqueue` cleanup; automatic for `__iter__`.
 
         Raises:
             RuntimeError: If an exception occurred in the worker thread.
