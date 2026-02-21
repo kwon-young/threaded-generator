@@ -61,3 +61,19 @@ class TestThreadedGenerator(unittest.TestCase):
         # Second pass (restart)
         result2 = list(gen)
         self.assertEqual(result2, list(source))
+
+    def test_exception_propagation(self):
+        """Test that exceptions in the source are propagated to the consumer."""
+        def error_gen():
+            yield 1
+            yield 2
+            raise ValueError("Test Error")
+        
+        gen = ThreadedGenerator(error_gen())
+        
+        # We expect a RuntimeError wrapping the original ValueError
+        with self.assertRaises(RuntimeError) as cm:
+            list(gen)
+        
+        self.assertIsInstance(cm.exception.__cause__, ValueError)
+        self.assertEqual(str(cm.exception.__cause__), "Test Error")
