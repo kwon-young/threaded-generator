@@ -24,7 +24,6 @@ class ThreadedGenerator(Generic[T]):
 
     def __init__(self, it: Iterable[T], maxsize: int = 1):
         self.it = it
-        self.maxsize = maxsize
         self.queue: Queue[T] = Queue(maxsize=maxsize)
         self.exception: Exception | None = None
 
@@ -43,7 +42,7 @@ class ThreadedGenerator(Generic[T]):
             self.queue.shutdown()
 
     def __iter__(self) -> Generator[T]:
-        self.queue = Queue(maxsize=self.maxsize)
+        self.queue.is_shutdown = False
         self.exception = None
         thread = Thread(target=self.run, name=repr(self.it))
         thread.start()
