@@ -15,7 +15,7 @@ class ThreadedGenerator(Generic[T]):
 
     Note:
         This class uses an internal lock to ensure thread safety during
-        iteration startup and thread creation.
+        iteration and thread creation.
 
     Example:
         >>> list(ThreadedGenerator(range(3), maxsize=2))
@@ -63,7 +63,8 @@ class ThreadedGenerator(Generic[T]):
         """
         Iterate over the buffered items.
 
-        The iteration startup is protected by a lock to ensure thread safety.
+        The iteration is protected by a lock to ensure thread safety.
+        Only a single thread will be able to iterate at a time.
         """
         with self.lock:
             self.start()
