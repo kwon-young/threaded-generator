@@ -10,11 +10,12 @@ class ThreadedGenerator(Generic[T]):
     """
     Buffer items from an iterable in a separate thread (Python > 3.13).
 
-    Iteration starts a worker thread that buffers items into a queue.
-    The thread is automatically joined and resources cleaned up when
-    iteration finishes or errors.
+    This class supports two modes of consumption:
+    1. Direct iteration (`__iter__`): manages the full lifecycle (start/join).
+    2. Concurrent queue access (`enqueue`): allows consuming the queue directly.
 
-    Thread safety is ensured via an internal lock.
+    These modes are mutually exclusive via a lock, as the underlying iterable
+    is assumed to be not thread-safe.
 
     Example:
         >>> list(ThreadedGenerator(range(3), maxsize=2))
@@ -59,12 +60,16 @@ class ThreadedGenerator(Generic[T]):
 
     def enqueue(self) -> Generator[T]:
         """
-        Start the generator if needed and return the underlying queue.
+        Start the generator if needed and return a generator over the queue.
 
         This enables concurrent access to the iterator items via the queue.
+        Acquires the lock non-blocking; if the generator is already running
+        via `__iter__` (locked), this may not start a new thread or might
+        piggyback if the lock logic allows (implementation dependent), but
+        intended usage implies exclusivity.
 
         Returns:
-            Queue[T]: The queue buffering the iterator items.
+            Generator[T]: A generator yielding items from the queue.
         """
         self.start(blocking=False)
         return self.iter_queue()
