@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = "GPL-3.0-only"
 authors = [
-  { name = "Your Name", email = "your.email@example.com" },
+  { name = "Kwon-Young Choi", email = "kwon-young.choi@hotmail.fr" },
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
