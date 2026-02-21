@@ -105,7 +105,7 @@ class ThreadedGenerator(Generic[T]):
 
     def join(self) -> None:
         """
-        Stop the generator, join the thread, and re-raise any exceptions.
+        Join the thread and queue, and re-raise any exceptions.
 
         Raises:
             RuntimeError: If an exception occurred in the worker thread.
