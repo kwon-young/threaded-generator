@@ -46,13 +46,18 @@ class ThreadedGenerator(Generic[T]):
         finally:
             self.queue.shutdown()
 
-    def start(self) -> None:
-        self.queue.is_shutdown = False
-        self.exception = None
-        self.thread = Thread(target=self.run, name=repr(self.it))
-        self.thread.start()
+    def start(self, blocking: bool = True) -> None:
+        if self.lock.acquire(blocking=blocking):
+            try:
+                self.queue.is_shutdown = False
+                self.exception = None
+                self.thread = Thread(target=self.run, name=repr(self.it))
+                self.thread.start()
+            except Exception:
+                self.lock.release()
+                raise
 
-    def enqueue(self) -> Queue[T]:
+    def enqueue(self) -> Generator[T]:
         """
         Start the generator if needed and return the underlying queue.
 
@@ -61,10 +66,15 @@ class ThreadedGenerator(Generic[T]):
         Returns:
             Queue[T]: The queue buffering the iterator items.
         """
-        with self.lock:
-            if self.thread is None:
-                self.start()
-        return self.queue
+        self.start(blocking=False)
+        return self.iter_queue()
+
+    def iter_queue(self) -> Generator[T]:
+        try:
+            while True:
+                yield self.queue.get()
+        except ShutDown:
+            pass
 
     def __iter__(self) -> Generator[T]:
         """
@@ -72,15 +82,15 @@ class ThreadedGenerator(Generic[T]):
 
         Uses a lock to ensure only one thread iterates at a time.
         """
-        with self.lock:
-            self.start()
-            try:
-                while True:
-                    yield self.queue.get()
-            except ShutDown:
-                pass
-            finally:
-                self.join()
+        self.start(blocking=True)
+        try:
+            yield from self.iter_queue()
+        finally:
+            self.terminate()
+
+    def terminate(self, immediate: bool = True) -> None:
+        self.queue.shutdown(immediate)
+        self.join()
 
     def join(self) -> None:
         """
@@ -89,9 +99,17 @@ class ThreadedGenerator(Generic[T]):
         Raises:
             RuntimeError: If an exception occurred in the worker thread.
         """
-        self.queue.shutdown(immediate=True)
         if self.thread:
             self.thread.join()
+            self.thread = None
+        self.queue.shutdown(immediate=True)  # empty the queue
+        try:
+            self.lock.release()
+        except RuntimeError:
+            pass
         if self.exception:
             msg = f"Exception from {self.thread}"
-            raise RuntimeError(msg) from self.exception
+            try:
+                raise RuntimeError(msg) from self.exception
+            finally:
+                self.exception = None
