@@ -74,8 +74,9 @@ class ThreadedGenerator(Generic[T]):
     def iter_queue(self) -> Generator[T]:
         try:
             while True:
-                yield self.queue.get()
+                x = self.queue.get()
                 self.queue.task_done()
+                yield x
         except ShutDown:
             pass
 
@@ -98,7 +99,8 @@ class ThreadedGenerator(Generic[T]):
         Signal queue shutdown and join thread.
 
         Args:
-            immediate (bool): If True, empty the queue before joining.
+            immediate (bool): If True, remaining consumers will be stopped
+                              immediately.
         """
         self.queue.shutdown(immediate)
         self.join()

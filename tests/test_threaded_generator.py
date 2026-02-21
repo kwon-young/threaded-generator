@@ -118,8 +118,10 @@ class TestThreadedGenerator(unittest.TestCase):
         # So we expect (0, 1), (2, 3), (4, 5), (6, 7), (8, 9)
         results = list(zip(it1, it2))
         
+        print(results)
+        print(gen.queue, gen.queue.unfinished_tasks)
         # Must call join manually when using enqueue
-        gen.join()
+        gen.terminate(immediate=True)
         
         expected = [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9)]
         self.assertEqual(results, expected)
