@@ -83,6 +83,9 @@ class ThreadedGenerator(Generic[T]):
         """
         Iterate over buffered items. Manages lifecycle (start/join).
         Blocks if lock held (by `enqueue`/`__iter__`) until `join()` is called.
+
+        Returns:
+            Generator[T]: A generator yielding items from the queue.
         """
         self.start(blocking=True)
         try:
@@ -91,6 +94,12 @@ class ThreadedGenerator(Generic[T]):
             self.terminate()
 
     def terminate(self, immediate: bool = True) -> None:
+        """
+        Signal queue shutdown and join thread.
+
+        Args:
+            immediate (bool): If True, empty the queue before joining.
+        """
         self.queue.shutdown(immediate)
         self.join()
 
