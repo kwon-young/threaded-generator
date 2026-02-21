@@ -123,3 +123,109 @@ class TestThreadedGenerator(unittest.TestCase):
         
         expected = [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9)]
         self.assertEqual(results, expected)
+
+    def test_locking(self):
+        """Test that the generator locks during iteration."""
+        source = range(10)
+        gen = ThreadedGenerator(source)
+
+        # Start one consumption via enqueue
+        _ = gen.enqueue()
+        
+        # Verify that the lock is held
+        self.assertTrue(gen.lock.locked())
+        
+        # Clean up
+        gen.terminate()
+        self.assertFalse(gen.lock.locked())
+
+    def test_terminate(self):
+        """Test that terminate stops a potentially infinite source."""
+        import time
+        
+        def infinite_gen():
+            i = 0
+            while True:
+                yield i
+                i += 1
+                time.sleep(0.01) # Slow producer
+
+        gen = ThreadedGenerator(infinite_gen(), maxsize=5)
+        it = gen.enqueue()
+        
+        # Consume a few
+        next(it)
+        next(it)
+        
+        # Terminate
+        gen.terminate(immediate=True)
+        
+        # The lock should be released
+        self.assertFalse(gen.lock.locked())
+        
+        # The thread should be gone
+        self.assertIsNone(gen.thread)
+
+    def test_locking(self):
+        """Test that the generator locks during iteration."""
+        source = range(10)
+        gen = ThreadedGenerator(source)
+
+        # Start one consumption via enqueue
+        it = gen.enqueue()
+        
+        # Try to start another consumption immediately via enqueue.
+        # Since enqueue uses start(blocking=False), the internal lock check inside start
+        # might succeed if it just checks if it's already running? 
+        # No, start() acquires the lock. 
+        # If the lock is held, start(blocking=False) returns None? 
+        # Let's check the code:
+        # if self.lock.acquire(blocking=blocking): ...
+        
+        # So if we call gen.start(blocking=False) manually, it should return None/False (impl detail)
+        # But enqueue calls start(blocking=False) and ignores return value.
+        # Wait, if start(blocking=False) fails to acquire lock, it skips starting the thread.
+        # But it returns the iterator from iter_queue() anyway.
+        # This allows multiple enqueues to share the SAME thread/queue (which is the feature tested in test_shared_consumption).
+        
+        # However, __iter__ uses blocking=True.
+        # So if we have an active enqueue, __iter__ should block.
+        # Testing blocking behavior is tricky. 
+        
+        # Instead, let's test that we cannot misuse it by trying to run two SEPARATE threads on the same generator 
+        # if the first one hasn't finished. 
+        # Actually, the class design allows multiple consumers on ONE producer thread.
+        
+        # Let's verify that the lock is indeed held.
+        self.assertTrue(gen.lock.locked())
+        
+        # Clean up
+        gen.terminate()
+        self.assertFalse(gen.lock.locked())
+
+    def test_terminate(self):
+        """Test that terminate stops a potentially infinite source."""
+        import time
+        
+        def infinite_gen():
+            i = 0
+            while True:
+                yield i
+                i += 1
+                time.sleep(0.01) # Slow producer
+
+        gen = ThreadedGenerator(infinite_gen(), maxsize=5)
+        it = gen.enqueue()
+        
+        # Consume a few
+        next(it)
+        next(it)
+        
+        # Terminate
+        gen.terminate(immediate=True)
+        
+        # The lock should be released
+        self.assertFalse(gen.lock.locked())
+        
+        # The thread should be gone
+        self.assertIsNone(gen.thread)
