@@ -14,12 +14,13 @@ class ThreadedGenerator(Generic[T]):
     1. Direct iteration (`__iter__`):
        The simplest way to use the generator. It handles starting the thread
        and joining it when iteration completes. Only one consumer can iterate
-       at a time.
+       at a time. Restarting iteration will also restart the underlying iterable.
 
     2. Shared consumption (`enqueue` + `join`):
        Multiple consumers can call `enqueue()` to pull items from the same
        underlying iterable concurrently. The main thread must eventually call
-       `join()` to ensure resources are cleaned up.
+       `join()` to ensure resources are cleaned up. To restart iteration with
+       `enqueue`, `join()` must be called first.
 
     The underlying iterable is assumed to be not thread-safe, so only one
     worker thread buffers items into the queue.
