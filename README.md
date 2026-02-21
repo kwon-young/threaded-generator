@@ -68,9 +68,9 @@ gen.join()
 
 There are three ways to stop the generator and clean up resources:
 
-1.  **`gen.join()`**: Waits for the producer to finish all items naturally, then stops the thread. Re-raises any exceptions found in the producer.
-2.  **`gen.terminate(immediate=True)`**: Forces immediate shutdown. Discards remaining items in the buffer and stops the thread ASAP.
-3.  **`gen.terminate(immediate=False)`**: Signals shutdown but allows consumers to finish processing currently buffered items before stopping.
+1.  **`gen.join()`**: Waits for the producer and consumers to finish normally, then join the thread and queue. Re-raises any exceptions found in the producer.
+2.  **`gen.terminate(immediate=True)`**: Forces immediate shutdown. Discards remaining items in the buffer and stops the thread.
+3.  **`gen.terminate(immediate=False)`**: Stop the producer thread but allows consumers to finish processing currently buffered items before stopping.
 
 ## Error Handling
 

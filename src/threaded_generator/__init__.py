@@ -28,12 +28,14 @@ class ThreadedGenerator(Generic[T]):
         maxsize (int): Maximum items to buffer.
     """
 
-    def __init__(self, it: Iterable[T], maxsize: int = 1):
+    def __init__(self, it: Iterable[T], maxsize: int = 1,
+                 disable: bool = False):
         self.it = it
         self.queue: Queue[T] = Queue(maxsize=maxsize)
         self.thread: Thread | None = None
         self.exception: Exception | None = None
         self.lock = Lock()
+        self.disable = disable
 
     def __repr__(self) -> str:
         return f"ThreadedGenerator({repr(self.it)})"
@@ -88,11 +90,14 @@ class ThreadedGenerator(Generic[T]):
         Returns:
             Generator[T]: A generator yielding items from the queue.
         """
-        self.start(blocking=True)
-        try:
-            yield from self.iter_queue()
-        finally:
-            self.terminate()
+        if self.disable:
+            yield from self.it
+        else:
+            self.start(blocking=True)
+            try:
+                yield from self.iter_queue()
+            finally:
+                self.terminate()
 
     def terminate(self, immediate: bool = True) -> None:
         """
