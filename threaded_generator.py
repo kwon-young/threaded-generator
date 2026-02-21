@@ -78,6 +78,7 @@ class ThreadedGenerator(Generic[T]):
         try:
             while True:
                 yield self.queue.get()
+                self.queue.task_done()
         except ShutDown:
             pass
 
@@ -107,7 +108,8 @@ class ThreadedGenerator(Generic[T]):
         if self.thread:
             self.thread.join()
             self.thread = None
-        self.queue.shutdown(immediate=True)  # empty the queue
+        self.queue.shutdown()
+        self.queue.join()
         try:
             self.lock.release()
         except RuntimeError:
