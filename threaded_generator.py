@@ -62,8 +62,8 @@ class ThreadedGenerator(Generic[T]):
 
     def enqueue(self) -> Generator[T]:
         """
-        Return a generator yielding from the shared queue ("Shared consumption").
-        Starts thread if needed. Caller must eventually call `join()` to cleanup.
+        Return a generator yielding from the shared queue.
+        Starts thread if needed. Caller must call `join()` to cleanup.
 
         Returns:
             Generator[T]: A generator yielding items from the queue.
@@ -81,7 +81,7 @@ class ThreadedGenerator(Generic[T]):
 
     def __iter__(self) -> Generator[T]:
         """
-        Iterate over buffered items ("Direct iteration"). Manages lifecycle (start/join).
+        Iterate over buffered items. Manages lifecycle (start/join).
         Blocks if lock held (by `enqueue`/`__iter__`) until `join()` is called.
         """
         self.start(blocking=True)
