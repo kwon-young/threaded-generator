@@ -10,12 +10,11 @@ class ThreadedGenerator(Generic[T]):
     """
     Buffer items from an iterable in a separate thread (Python > 3.13).
 
-    The worker thread starts on iteration and cleans up automatically (joining
-    the thread and shutting down the queue) when iteration stops or errors.
+    Iteration starts a worker thread that buffers items into a queue.
+    The thread is automatically joined and resources cleaned up when
+    iteration finishes or errors.
 
-    Note:
-        This class uses an internal lock to ensure thread safety during
-        iteration and thread creation.
+    Thread safety is ensured via an internal lock.
 
     Example:
         >>> list(ThreadedGenerator(range(3), maxsize=2))
@@ -23,7 +22,7 @@ class ThreadedGenerator(Generic[T]):
 
     Args:
         it (Iterable[T]): The iterable to wrap.
-        maxsize (int): Max items to buffer.
+        maxsize (int): Maximum items to buffer.
     """
 
     def __init__(self, it: Iterable[T], maxsize: int = 1):
@@ -61,10 +60,9 @@ class ThreadedGenerator(Generic[T]):
 
     def __iter__(self) -> Generator[T]:
         """
-        Iterate over the buffered items.
+        Iterate over buffered items.
 
-        The iteration is protected by a lock to ensure thread safety.
-        Only a single thread will be able to iterate at a time.
+        Uses a lock to ensure only one thread iterates at a time.
         """
         with self.lock:
             self.start()
