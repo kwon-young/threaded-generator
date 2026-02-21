@@ -27,5 +27,24 @@ import unittest
 from threaded_generator import ThreadedGenerator
 
 class TestThreadedGenerator(unittest.TestCase):
-    def test_placeholder(self):
-        pass
+    def test_basic_iteration(self):
+        """Test that it yields all items from source in order."""
+        source = range(10)
+        gen = ThreadedGenerator(source)
+        result = list(gen)
+        self.assertEqual(result, list(source))
+
+    def test_empty_source(self):
+        """Test that it handles empty source."""
+        source = []
+        gen = ThreadedGenerator(source)
+        result = list(gen)
+        self.assertEqual(result, [])
+
+    def test_small_maxsize(self):
+        """Test iteration works with a small maxsize (forcing blocking puts)."""
+        source = range(100)
+        # maxsize=1 forces the producer thread to block frequently
+        gen = ThreadedGenerator(source, maxsize=1)
+        result = list(gen)
+        self.assertEqual(result, list(source))
