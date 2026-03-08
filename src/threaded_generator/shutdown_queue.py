@@ -186,15 +186,22 @@ class ShutdownQueue[T]:
                           without draining remaining items. If False, consumers drain
                           the queue until the Sentinel is reached.
         """
-        self.shutdown_event.set()
+        put_sentinel = False
         with self.immediate.get_lock():
+            if self.shutdown_event.is_set():
+                if self.immediate.value is True or immediate is False:
+                    return
+            else:
+                put_sentinel = True
+                self.shutdown_event.set()
             self.immediate.value = immediate
             self.drain()
-        try:
-            self.queue.put(Sentinel, True, self.poll_time)
-        except Full:
-            # for very slow consumers, let the poll mechanism work
-            pass
+        if put_sentinel:
+            try:
+                self.queue.put(Sentinel, True, self.poll_time)
+            except Full:
+                # for very slow consumers, let the poll mechanism work
+                pass
 
     @property
     def is_shutdown(self) -> bool:

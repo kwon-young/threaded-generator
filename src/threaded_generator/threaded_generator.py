@@ -176,7 +176,7 @@ def iterable_worker[T](
     barrier: ms.Barrier,
     name: str,
     worker_id: int,
-    error_queue: Q[tuple[str, Exception]],
+    error_queue: mq.Queue[tuple[str, Exception]],
 ) -> None:
     try:
         for x in it:
@@ -235,7 +235,11 @@ class ParallelGenerator[T]:
         self.it: Iterable[T] = it
         self.num_workers: int = 0 if disable else num_workers
         self.refcount: Synchronized[int]
-        self.error_queue: mq.Queue[tuple[str, Exception]] = mp.Queue()
+        self.error_queue: Q[tuple[str, Exception]]
+        if method == 'process':
+            self.error_queue = mp.Queue()
+        else:
+            self.error_queue = Queue()
         self.maxsize = maxsize
         self.refcount = mp.Value("i", 0)
         self.queue = method_queue(method, queue_type)(maxsize=maxsize)
