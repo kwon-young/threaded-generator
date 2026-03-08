@@ -4,16 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "threaded-generator"
-version = "0.2.0"
+version = "0.3.0"
 description = "Buffer items from an iterable in a separate thread."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 license = "GPL-3.0-only"
 authors = [
   { name = "Kwon-Young Choi", email = "kwon-young.choi@hotmail.fr" },
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Operating System :: OS Independent",
