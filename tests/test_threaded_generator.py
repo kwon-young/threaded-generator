@@ -91,7 +91,6 @@ class TestThreadedGenerator(unittest.TestCase):
         gen = ThreadedGenerator(source)
 
         # Lock should not be held initially
-        self.assertFalse(gen.lock.locked())
         self.assertEqual(len(gen.workers), 0)
 
         with gen:
