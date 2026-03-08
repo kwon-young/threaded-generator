@@ -128,4 +128,4 @@ class TestThreadedGenerator(unittest.TestCase):
         for worker in gen.workers:
             self.assertFalse(worker.is_alive())
         self.assertTrue(gen.queue.is_shutdown)
-        self.assertEqual(gen.refcount, 0)
+        self.assertEqual(gen.refcount.value, 0)
