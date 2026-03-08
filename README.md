@@ -145,6 +145,8 @@ except ShutDown:
 
 Exceptions raised within the source iterable are caught in the background worker and re-raised in the main thread (wrapped in a `RuntimeError`) when `join()` is called or iteration completes.
 
+**Note:** When using `ProcessGenerator` or `ParallelGenerator` (multiprocessing), exception propagation is limited. Because exceptions are pickled to be sent across processes, the original traceback and `__cause__` attributes are lost during serialization. As a result, when chaining multiple process-based generators, the main thread will receive a `RuntimeError` but may not be able to access the full chain of causes or the original stack trace from the worker process. Use `ThreadedGenerator` if preserving the full exception chain is required.
+
 ## Credits
 
 The original idea for `ThreadedGenerator` (combining a generator, a thread, and a queue) is attributed to [everilae](https://github.com/everilae) and their [GitHub Gist](https://gist.github.com/everilae/9697228).
