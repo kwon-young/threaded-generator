@@ -41,6 +41,7 @@
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">ThreadedGenerator</span></code></strong>: Run an iterator in a background thread (good for I/O bound tasks).</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">ProcessGenerator</span></code></strong>: Run an iterator in a background process (good for CPU bound tasks, avoids GIL).</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">ParallelGenerator</span></code></strong>: Split the work of an iterator across multiple parallel workers.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">ShutdownQueue</span></code></strong>: A queue wrapper that handles graceful shutdown signaling between producers and consumers.</p></li>
 <li><p><strong><code class="docutils literal notranslate"><span class="pre">Monitor</span></code></strong>: Real-time terminal visualization of queue sizes and throughput.</p></li>
 </ul>
 <section id="installation">
@@ -143,10 +144,38 @@
 </pre></div>
 </div>
 </section>
+<section id="shutdownqueue">
+<h3>ShutdownQueue<a class="headerlink" href="#shutdownqueue" title="Link to this heading">¶</a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">ShutdownQueue</span></code> directly if you need a queue that supports graceful shutdown signaling.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">multiprocessing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">mp</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">queue</span><span class="w"> </span><span class="kn">import</span> <span class="n">ShutDown</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">threaded_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">ShutdownQueue</span>
+
+<span class="c1"># Create a shutdown-capable queue backed by a multiprocessing Queue</span>
+<span class="n">sq</span> <span class="o">=</span> <span class="n">ShutdownQueue</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">queue_type</span><span class="o">=</span><span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">)</span>
+
+<span class="c1"># Producer</span>
+<span class="n">sq</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">sq</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">sq</span><span class="o">.</span><span class="n">shutdown</span><span class="p">()</span>  <span class="c1"># Signal end of stream</span>
+
+<span class="c1"># Consumer</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">sq</span><span class="o">.</span><span class="n">get</span><span class="p">())</span>
+<span class="k">except</span> <span class="n">ShutDown</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Queue shut down&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
 <section id="error-handling">
 <h3>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading">¶</a></h3>
 <p>Exceptions raised within the source iterable are caught in the background worker and re-raised in the main thread (wrapped in a <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code>) when <code class="docutils literal notranslate"><span class="pre">join()</span></code> is called or iteration completes.</p>
 </section>
+</section>
+<section id="credits">
+<h2>Credits<a class="headerlink" href="#credits" title="Link to this heading">¶</a></h2>
+<p>The original idea for <code class="docutils literal notranslate"><span class="pre">ThreadedGenerator</span></code> (combining a generator, a thread, and a queue) is attributed to <a class="reference external" href="https://github.com/everilae">everilae</a> and their <a class="reference external" href="https://gist.github.com/everilae/9697228">GitHub Gist</a>.</p>
 </section>
 </section>
 <section id="documentation">

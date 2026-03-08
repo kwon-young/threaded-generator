@@ -144,3 +144,7 @@ except ShutDown:
 ### Error Handling
 
 Exceptions raised within the source iterable are caught in the background worker and re-raised in the main thread (wrapped in a `RuntimeError`) when `join()` is called or iteration completes.
+
+## Credits
+
+The original idea for `ThreadedGenerator` (combining a generator, a thread, and a queue) is attributed to [everilae](https://github.com/everilae) and their [GitHub Gist](https://gist.github.com/everilae/9697228).
