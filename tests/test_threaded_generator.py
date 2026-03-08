@@ -104,7 +104,7 @@ class TestThreadedGenerator(unittest.TestCase):
         # Should be cleaned up
         self.assertFalse(gen.workers[0].is_alive())
         self.assertTrue(gen.queue.is_shutdown)
-        self.assertEqual(gen.refcount, 0)
+        self.assertEqual(gen.refcount.value, 0)
 
     def test_early_break(self):
         """Test that breaking out of loop cleans up."""
