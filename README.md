@@ -2,6 +2,8 @@
 
 Easily run iterators in background threads or processes to create parallel producer-consumer pipelines.
 
+**Documentation:** https://kwon-young.github.io/threaded-generator/
+
 This library provides utilities to wrap an iterable (like a generator, a slow I/O process, or a CPU-bound task) in a background thread or process. It buffers items in a queue so that the consumer and producer can work concurrently, smoothing out bursts and improving throughput.
 
 Key Features:
