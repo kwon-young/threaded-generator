@@ -1,12 +1,19 @@
 import os
 import sys
+import tomllib
 
 # Point Sphinx to the source code
 sys.path.insert(0, os.path.abspath('../src'))
 
-project = 'Threaded Generator'
-copyright = '2026, Kwon-Young Choi'
-author = 'Kwon-Young Choi'
+with open("../pyproject.toml", "rb") as f:
+    toml = tomllib.load(f)
+    pyproject = toml["project"]
+
+project = pyproject["name"]
+author = pyproject["authors"][0]["name"]
+copyright = f"2026, {author}"
+release = pyproject["version"]
+version = ".".join(release.split(".")[:2])
 
 extensions = [
     'sphinx.ext.autodoc',
