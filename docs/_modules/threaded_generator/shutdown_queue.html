@@ -235,15 +235,22 @@
 <span class="sd">                          without draining remaining items. If False, consumers drain</span>
 <span class="sd">                          the queue until the Sentinel is reached.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">shutdown_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+        <span class="n">put_sentinel</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">immediate</span><span class="o">.</span><span class="n">get_lock</span><span class="p">():</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shutdown_event</span><span class="o">.</span><span class="n">is_set</span><span class="p">():</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">immediate</span><span class="o">.</span><span class="n">value</span> <span class="ow">is</span> <span class="kc">True</span> <span class="ow">or</span> <span class="n">immediate</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+                    <span class="k">return</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">put_sentinel</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">shutdown_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">immediate</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">immediate</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">drain</span><span class="p">()</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">Sentinel</span><span class="p">,</span> <span class="kc">True</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">poll_time</span><span class="p">)</span>
-        <span class="k">except</span> <span class="n">Full</span><span class="p">:</span>
-            <span class="c1"># for very slow consumers, let the poll mechanism work</span>
-            <span class="k">pass</span></div>
+        <span class="k">if</span> <span class="n">put_sentinel</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">Sentinel</span><span class="p">,</span> <span class="kc">True</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">poll_time</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">Full</span><span class="p">:</span>
+                <span class="c1"># for very slow consumers, let the poll mechanism work</span>
+                <span class="k">pass</span></div>
 
 
     <span class="nd">@property</span>

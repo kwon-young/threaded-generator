@@ -35,6 +35,7 @@
   <section id="threaded-generator">
 <h1>Threaded Generator<a class="headerlink" href="#threaded-generator" title="Link to this heading">¶</a></h1>
 <p>Easily run iterators in background threads or processes to create parallel producer-consumer pipelines.</p>
+<p><strong>Documentation:</strong> https://kwon-young.github.io/threaded-generator/</p>
 <p>This library provides utilities to wrap an iterable (like a generator, a slow I/O process, or a CPU-bound task) in a background thread or process. It buffers items in a queue so that the consumer and producer can work concurrently, smoothing out bursts and improving throughput.</p>
 <p>Key Features:</p>
 <ul class="simple">
@@ -171,6 +172,7 @@
 <section id="error-handling">
 <h3>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading">¶</a></h3>
 <p>Exceptions raised within the source iterable are caught in the background worker and re-raised in the main thread (wrapped in a <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code>) when <code class="docutils literal notranslate"><span class="pre">join()</span></code> is called or iteration completes.</p>
+<p><strong>Note:</strong> When using <code class="docutils literal notranslate"><span class="pre">ProcessGenerator</span></code> or <code class="docutils literal notranslate"><span class="pre">ParallelGenerator</span></code> (multiprocessing), exception propagation is limited. Because exceptions are pickled to be sent across processes, the original traceback and <code class="docutils literal notranslate"><span class="pre">__cause__</span></code> attributes are lost during serialization. As a result, when chaining multiple process-based generators, the main thread will receive a <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code> but may not be able to access the full chain of causes or the original stack trace from the worker process. Use <code class="docutils literal notranslate"><span class="pre">ThreadedGenerator</span></code> if preserving the full exception chain is required.</p>
 </section>
 </section>
 <section id="credits">
